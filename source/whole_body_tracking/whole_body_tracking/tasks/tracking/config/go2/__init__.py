@@ -23,3 +23,14 @@ gym.register(
         "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:Go2FlatPPORunnerCfg",
     },
 )
+
+
+gym.register(
+    id="Tracking-Trampoline-Go2-No-State-Estimation-v0",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": flat_env_cfg.go2_trampoline_no_state_estimation_env_cfg,
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:Go2TrampolinePPORunnerCfg",
+    },
+)

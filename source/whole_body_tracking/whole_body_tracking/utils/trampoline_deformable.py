@@ -14,7 +14,7 @@ TRAMPOLINE_CENTER_Z = TRAMPOLINE_TOP_Z - 0.5 * TRAMPOLINE_THICKNESS
 TRAMPOLINE_PIN_WIDTH = 4.0
 TRAMPOLINE_MASS = 10.0
 TRAMPOLINE_YOUNGS_MODULUS = 1.0e8
-TRAMPOLINE_SIM_RESOLUTION = 10
+TRAMPOLINE_SIM_RESOLUTION = 20
 TRAMPOLINE_DR_YOUNGS_MODULUS_RANGE = (1.0e8, 1.0e8)
 TRAMPOLINE_DR_MASS_RANGE = (10.0, 10.0)
 
@@ -37,15 +37,15 @@ def make_trampoline_cfg(
             axis="Z",
             mass_props=sim_utils.MassPropertiesCfg(mass=mass),
             deformable_props=sim_utils.DeformableBodyPropertiesCfg(
-                solver_position_iteration_count=24,
+                solver_position_iteration_count=48,
                 vertex_velocity_damping=0.05,
                 sleep_damping=1.0,
                 sleep_threshold=0.01,
                 settling_threshold=0.02,
                 self_collision=False,
                 simulation_hexahedral_resolution=sim_resolution,
-                contact_offset=0.01,
-                rest_offset=0.0,
+                contact_offset=0.05,
+                rest_offset=0.02,
             ),
             visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.15, 0.35, 0.95), metallic=0.05),
             physics_material=sim_utils.DeformableBodyMaterialCfg(

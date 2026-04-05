@@ -56,3 +56,20 @@ def bad_motion_body_pos_z_only(
     body_indexes = _get_body_indexes(command, body_names)
     error = torch.abs(command.body_pos_relative_w[:, body_indexes, -1] - command.robot_body_pos_w[:, body_indexes, -1])
     return torch.any(error > threshold, dim=-1)
+
+
+def root_height_out_of_bounds(
+    env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg, min_height: float, max_height: float
+) -> torch.Tensor:
+    asset: RigidObject | Articulation = env.scene[asset_cfg.name]
+    root_pos_w = asset.data.root_pos_w
+    relative_height = root_pos_w[:, 2] - env.scene.env_origins[:, 2]
+    return (~torch.isfinite(relative_height)) | (relative_height < min_height) | (relative_height > max_height)
+
+
+def root_xy_too_far_from_origin(
+    env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg, threshold: float
+) -> torch.Tensor:
+    asset: RigidObject | Articulation = env.scene[asset_cfg.name]
+    relative_xy = asset.data.root_pos_w[:, :2] - env.scene.env_origins[:, :2]
+    return torch.any(~torch.isfinite(relative_xy), dim=-1) | (torch.linalg.vector_norm(relative_xy, dim=-1) > threshold)

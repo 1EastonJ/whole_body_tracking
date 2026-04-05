@@ -20,7 +20,11 @@ from whole_body_tracking.robots.go2 import (
     GO2_NON_FOOT_CONTACT_BODY_NAMES,
     GO2_TRACKING_ANCHOR_BODY_NAME,
 )
-from whole_body_tracking.robots.go2_hopping import GO2_HOPPING_ACTION_SCALE_MAP, GO2_HOPPING_CFG
+from whole_body_tracking.robots.go2_hopping import (
+    GO2_HOPPING_ACTION_SCALE_MAP,
+    GO2_HOPPING_CFG,
+    GO2_HOPPING_TRAMPOLINE_CFG,
+)
 from whole_body_tracking.utils.trampoline_deformable import (
     TRAMPOLINE_PIN_WIDTH,
     TRAMPOLINE_RADIUS,
@@ -268,8 +272,11 @@ def go2_hopping_flat_env_cfg() -> Go2HoppingFlatEnvCfg:
 def go2_hopping_trampoline_env_cfg() -> Go2HoppingFlatEnvCfg:
     cfg = Go2HoppingFlatEnvCfg()
     cfg.terrain = None
+    cfg.sim.physx.max_position_iteration_count = 8
+    cfg.sim.physx.max_velocity_iteration_count = 4
     cfg.scene.replicate_physics = False
     cfg.scene.env_spacing = max(float(cfg.scene.env_spacing), 2.0 * float(cfg.trampoline_radius) + 2.0)
+    cfg.robot = GO2_HOPPING_TRAMPOLINE_CFG.replace(prim_path="/World/envs/env_.*/Robot")
     cfg.trampoline = make_trampoline_cfg(
         "/World/envs/env_.*/Trampoline",
         center_z=float(cfg.trampoline_surface_height) - 0.5 * float(cfg.trampoline_thickness),
@@ -279,6 +286,38 @@ def go2_hopping_trampoline_env_cfg() -> Go2HoppingFlatEnvCfg:
     cfg.use_plain_trampoline_visual = False
     if _is_play_mode():
         cfg = _apply_play_overrides(cfg)
+    return cfg
+
+
+def go2_hopping_trampoline_tracking_cfg_env_cfg() -> Go2HoppingFlatEnvCfg:
+    cfg = go2_hopping_trampoline_env_cfg()
+    cfg.robot = GO2_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+    cfg.action_scale = _ordered_action_scale(GO2_ACTION_SCALE)
+
+    cfg.commands.curriculum = True
+    cfg.commands.resampling_time = 6.0
+    cfg.commands.command_xy_deadzone = 0.0
+    cfg.commands.ranges.lin_vel_x = (0.4, 1.0)
+    cfg.commands.ranges.lin_vel_y = (0.0, 0.0)
+    cfg.commands.ranges.ang_vel_yaw = (0.0, 0.0)
+    cfg.commands.ranges.heading = (0.0, 0.0)
+
+    cfg.rewards.scales.tracking_lin_vel = 1.5
+    cfg.rewards.scales.tracking_ang_vel = 0.0
+    cfg.rewards.scales.orientation = 1.0
+    cfg.rewards.scales.dof_acc = -1.0e-4
+    cfg.rewards.scales.action_rate = -0.002
+    cfg.rewards.scales.default_pos = -0.02
+    cfg.rewards.scales.base_height = 2.0
+    cfg.rewards.scales.feet_air_time = 5.0
+    cfg.rewards.scales.jump = 8.0
+    cfg.rewards.scales.feet_clearance = 3.0
+    cfg.rewards.scales.collision = -3.0
+    cfg.rewards.base_height_target = 0.35
+    cfg.rewards.cycle_time = 1.0
+    cfg.rewards.target_feet_height = 0.12
+
+    cfg.usable_radius = min(float(cfg.trampoline_radius), 4.0)
     return cfg
 
 

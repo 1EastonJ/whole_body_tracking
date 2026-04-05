@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import os
 
+from isaaclab.assets import DeformableObjectCfg
+from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import SceneEntityCfg
+from isaaclab.managers import TerminationTermCfg as DoneTerm
+from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
 
 import whole_body_tracking.tasks.tracking.mdp as mdp
@@ -14,7 +18,14 @@ from whole_body_tracking.robots.go2 import (
     GO2_TRACKING_ANCHOR_BODY_NAME,
     GO2_TRACKING_BODY_NAMES,
 )
-from whole_body_tracking.tasks.tracking.tracking_env_cfg import TrackingEnvCfg
+from whole_body_tracking.tasks.tracking.tracking_env_cfg import MySceneCfg, TrackingEnvCfg
+from whole_body_tracking.utils.trampoline_deformable import (
+    TRAMPOLINE_PIN_WIDTH,
+    TRAMPOLINE_RADIUS,
+    TRAMPOLINE_THICKNESS,
+    TRAMPOLINE_TOP_Z,
+    make_trampoline_cfg,
+)
 
 
 def _is_play_mode() -> bool:
@@ -33,6 +44,17 @@ def _apply_play_overrides(cfg: TrackingEnvCfg) -> TrackingEnvCfg:
     # Keep the play camera static so manual mouse control is not overridden by asset tracking.
     cfg.viewer.origin_type = 'world'
     return cfg
+
+
+@configclass
+class Go2TrampolineSceneCfg(MySceneCfg):
+    trampoline: DeformableObjectCfg = make_trampoline_cfg(
+        "{ENV_REGEX_NS}/Trampoline",
+        center_z=float(TRAMPOLINE_TOP_Z) - 0.5 * float(TRAMPOLINE_THICKNESS),
+        debug_vis=False,
+    )
+
+
 
 
 @configclass
@@ -77,6 +99,51 @@ class Go2FlatNoStateEstimationEnvCfg(Go2FlatEnvCfg):
         super().__post_init__()
         self.observations.policy.motion_anchor_pos_b = None
         self.observations.policy.base_lin_vel = None
+
+
+@configclass
+class Go2TrampolineNoStateEstimationEnvCfg(Go2FlatNoStateEstimationEnvCfg):
+    scene: Go2TrampolineSceneCfg = Go2TrampolineSceneCfg(
+        num_envs=4096,
+        env_spacing=max(2.5, 2.0 * float(TRAMPOLINE_RADIUS) + 2.0),
+        replicate_physics=False,
+    )
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.scene.terrain = None
+        self.scene.replicate_physics = False
+        self.scene.env_spacing = max(float(self.scene.env_spacing), 2.0 * float(TRAMPOLINE_RADIUS) + 2.0)
+        self.events.reset_trampoline = EventTerm(
+            func=mdp.reset_deformable_trampoline_event,
+            mode="reset",
+            params={
+                "asset_cfg": SceneEntityCfg("trampoline"),
+                "pin_width": float(TRAMPOLINE_PIN_WIDTH),
+            },
+        )
+        self.terminations.out_of_trampoline = DoneTerm(
+            func=mdp.root_xy_too_far_from_origin,
+            params={
+                "asset_cfg": SceneEntityCfg("robot"),
+                "threshold": max(0.0, float(TRAMPOLINE_RADIUS) - 0.25),
+            },
+        )
+        self.terminations.root_height = DoneTerm(
+            func=mdp.root_height_out_of_bounds,
+            params={
+                "asset_cfg": SceneEntityCfg("robot"),
+                "min_height": float(TRAMPOLINE_TOP_Z) - 1.0,
+                "max_height": float(TRAMPOLINE_TOP_Z) + 1.25,
+            },
+        )
+
+
+def go2_trampoline_no_state_estimation_env_cfg() -> Go2TrampolineNoStateEstimationEnvCfg:
+    cfg = Go2TrampolineNoStateEstimationEnvCfg()
+    if _is_play_mode():
+        cfg = _apply_play_overrides(cfg)
+    return cfg
 
 
 def go2_flat_env_cfg() -> Go2FlatEnvCfg:

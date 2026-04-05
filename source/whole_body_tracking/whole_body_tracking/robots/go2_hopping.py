@@ -93,5 +93,31 @@ GO2_HOPPING_CFG = UNITREE_GO2_CFG.replace(
     },
 )
 
+GO2_HOPPING_TRAMPOLINE_CFG = GO2_HOPPING_CFG.replace(
+    spawn=GO2_HOPPING_CFG.spawn.replace(
+        rigid_props=sim_utils.RigidBodyPropertiesCfg(
+            disable_gravity=False,
+            retain_accelerations=False,
+            linear_damping=0.0,
+            angular_damping=0.0,
+            max_linear_velocity=1000.0,
+            max_angular_velocity=1000.0,
+            max_depenetration_velocity=5.0,
+            enable_gyroscopic_forces=True,
+            solver_position_iteration_count=8,
+            solver_velocity_iteration_count=4,
+        ),
+        collision_props=sim_utils.CollisionPropertiesCfg(
+            contact_offset=0.005,
+            rest_offset=0.0,
+        ),
+        articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+            enabled_self_collisions=True,
+            solver_position_iteration_count=8,
+            solver_velocity_iteration_count=4,
+        ),
+    ),
+)
+
 GO2_HOPPING_ACTION_SCALE_MAP = {name: GO2_HOPPING_ACTION_SCALE for name in GO2_CSV_JOINT_NAMES}
 GO2_HOPPING_FOOT_BODY_NAMES = GO2_FOOT_BODY_NAMES

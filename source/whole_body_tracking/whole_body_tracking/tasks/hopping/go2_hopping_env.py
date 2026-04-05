@@ -169,6 +169,7 @@ class Go2HoppingEnv(DirectRLEnv):
         self._term_base_contact = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._term_back_lie = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._term_out_of_trampoline = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        self._term_bad_state = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._trampoline_targets: torch.Tensor | None = None
         self._trampoline_pinned_mask: torch.Tensor | None = None
         self._trampoline_center_node_ids: torch.Tensor | None = None
@@ -407,11 +408,23 @@ class Go2HoppingEnv(DirectRLEnv):
             out_of_trampoline = torch.linalg.vector_norm(base_xy - trampoline_center_xy, dim=1) > self.cfg.usable_radius
         else:
             out_of_trampoline = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+
+        joint_pos = self._joint_pos()
+        joint_vel = self._joint_vel()
+        bad_joint_pos = torch.any(~torch.isfinite(joint_pos) | (torch.abs(joint_pos) > 3.5), dim=1)
+        bad_joint_vel = torch.any(~torch.isfinite(joint_vel) | (torch.abs(joint_vel) > 60.0), dim=1)
+        bad_root_pos = torch.any(~torch.isfinite(self._robot.data.root_pos_w), dim=1)
+        bad_root_vel = torch.any(~torch.isfinite(self._robot.data.root_lin_vel_b), dim=1) | torch.any(
+            ~torch.isfinite(self._robot.data.root_ang_vel_b), dim=1
+        )
+        bad_state = bad_joint_pos | bad_joint_vel | bad_root_pos | bad_root_vel
+
         self._term_base_contact = base_contact
         self._term_back_lie = back_lie
         self._term_out_of_trampoline = out_of_trampoline
+        self._term_bad_state = bad_state
         time_out = self.episode_length_buf > self.max_episode_length
-        return base_contact | back_lie | out_of_trampoline, time_out
+        return base_contact | back_lie | out_of_trampoline | bad_state, time_out
 
     def _reset_idx(self, env_ids: Sequence[int]):
         if env_ids is None:
@@ -479,6 +492,7 @@ class Go2HoppingEnv(DirectRLEnv):
         extras["term_base_contact"] = torch.count_nonzero(self._term_base_contact[env_ids]).item()
         extras["term_back_lie"] = torch.count_nonzero(self._term_back_lie[env_ids]).item()
         extras["term_out_of_trampoline"] = torch.count_nonzero(self._term_out_of_trampoline[env_ids]).item()
+        extras["term_bad_state"] = torch.count_nonzero(self._term_bad_state[env_ids]).item()
         extras["term_terminated"] = torch.count_nonzero(self.reset_terminated[env_ids]).item()
         extras["term_time_out"] = torch.count_nonzero(self.reset_time_outs[env_ids]).item()
         self.extras["episode"] = extras
@@ -824,7 +838,8 @@ class Go2HoppingEnv(DirectRLEnv):
         return torch.sum(torch.square(self._joint_vel()), dim=1)
 
     def _reward_dof_acc(self) -> torch.Tensor:
-        return torch.sum(torch.square(self._last_dof_vel - self._joint_vel()), dim=1)
+        dof_vel_delta = torch.clamp(self._last_dof_vel - self._joint_vel(), min=-20.0, max=20.0)
+        return torch.sum(torch.square(dof_vel_delta), dim=1).clamp(max=1000.0)
 
     def _reward_action_rate(self) -> torch.Tensor:
         return torch.sum(torch.square(self._last_actions - self.actions), dim=1)
@@ -875,7 +890,8 @@ class Go2HoppingEnv(DirectRLEnv):
         ).float()
 
     def _reward_default_pos(self) -> torch.Tensor:
-        return torch.sum(torch.abs(self._joint_pos() - self._default_dof_pos), dim=1)
+        joint_error = torch.abs(self._joint_pos() - self._default_dof_pos)
+        return torch.sum(torch.clamp(joint_error, max=1.0), dim=1)
 
     def _reward_feet_contact_forces(self) -> torch.Tensor:
         return torch.sum(

@@ -230,6 +230,10 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
 
 if __name__ == "__main__":
-    os.environ["WHOLE_BODY_TRACKING_PLAY_MODE"] = "1"
+    if args_cli.task == "Hopping-Trampoline-Go2-TrackingCfg-v0":
+        os.environ.pop("WHOLE_BODY_TRACKING_PLAY_MODE", None)
+        print("[INFO]: Playing Hopping-Trampoline-Go2-TrackingCfg-v0 with training environment settings.")
+    else:
+        os.environ["WHOLE_BODY_TRACKING_PLAY_MODE"] = "1"
     main()
     simulation_app.close()

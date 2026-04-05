@@ -49,3 +49,28 @@ class Go2HoppingFlatPPORunnerCfg(RslRlOnPolicyRunnerCfg):
 @configclass
 class Go2HoppingTrampolinePPORunnerCfg(Go2HoppingFlatPPORunnerCfg):
     experiment_name = "go2_jump_trampoline"
+
+@configclass
+class Go2HoppingTrampolineTrackingCfgPPORunnerCfg(Go2HoppingTrampolinePPORunnerCfg):
+    experiment_name = "go2_jump_trampoline_tracking_cfg"
+    algorithm = RslRlPpoAlgorithmCfg(
+        value_loss_coef=1.0,
+        use_clipped_value_loss=True,
+        clip_param=0.2,
+        entropy_coef=0.01,
+        num_learning_epochs=5,
+        num_mini_batches=4,
+        learning_rate=1.0e-4,
+        schedule="adaptive",
+        gamma=0.99,
+        lam=0.95,
+        desired_kl=0.01,
+        max_grad_norm=1.0,
+        symmetry_cfg=RslRlSymmetryCfg(
+            use_data_augmentation=True,
+            use_mirror_loss=True,
+            data_augmentation_func=augment_go2_jump_symmetry,
+            mirror_loss_coeff=5.0,
+        ),
+    )
+

@@ -68,6 +68,22 @@ parser.add_argument(
     help="If set for robot actors, do not command the default standing pose.",
 )
 parser.add_argument(
+    "--robot_reset_mode",
+    type=str,
+    choices=("stand", "drop"),
+    default="stand",
+    help="Robot reset style: place the robot in its default standing pose or drop it from above the trampoline.",
+)
+parser.add_argument(
+    "--drop_height",
+    type=float,
+    default=2.5,
+    help="Additional root height above the normal robot reset pose when using --robot_reset_mode drop.",
+)
+parser.add_argument("--drop_vx", type=float, default=0.0, help="Initial robot x velocity for drop reset.")
+parser.add_argument("--drop_vy", type=float, default=0.0, help="Initial robot y velocity for drop reset.")
+parser.add_argument("--drop_vz", type=float, default=0.0, help="Initial robot z velocity for drop reset.")
+parser.add_argument(
     "--reset_interval",
     type=int,
     default=None,
@@ -90,7 +106,7 @@ parser.add_argument(
 parser.add_argument("--pin_width", type=float, default=4.0, help="Pinned rim width in meters for the deformable trampoline.")
 parser.add_argument("--youngs_modulus", type=float, default=1.0e8, help="Built-in trampoline Young's modulus.")
 parser.add_argument("--mass", type=float, default=10.0, help="Built-in trampoline mass.")
-parser.add_argument("--sim_resolution", type=int, default=10, help="Built-in trampoline hexahedral resolution.")
+parser.add_argument("--sim_resolution", type=int, default=20, help="Built-in trampoline hexahedral resolution.")
 parser.add_argument(
     "--randomize_on_reset",
     action="store_true",
@@ -328,6 +344,11 @@ def reset_robot(scene: InteractiveScene, robot: Articulation, surface_height: fl
     default_root_state = robot.data.default_root_state.clone()
     default_root_state[:, 0:3] += scene.env_origins
     default_root_state[:, 2] += surface_height
+    if args_cli.robot_reset_mode == "drop":
+        default_root_state[:, 2] += args_cli.drop_height
+        default_root_state[:, 7] = args_cli.drop_vx
+        default_root_state[:, 8] = args_cli.drop_vy
+        default_root_state[:, 9] = args_cli.drop_vz
     default_joint_pos = robot.data.default_joint_pos.clone()
     default_joint_vel = robot.data.default_joint_vel.clone()
     robot.write_root_pose_to_sim(default_root_state[:, :7], env_ids=env_ids)
@@ -514,6 +535,13 @@ def print_mode_summary(surface_height: float, ball_height: float | None) -> None
     )
     if args_cli.actor == "ball" and ball_height is not None:
         summary += f", ball_height={ball_height:.3f}"
+    elif args_cli.actor != "ball":
+        summary += f", robot_reset_mode={args_cli.robot_reset_mode}"
+        if args_cli.robot_reset_mode == "drop":
+            summary += (
+                f", drop_height={args_cli.drop_height:.3f}, "
+                f"drop_velocity=({args_cli.drop_vx:.3f}, {args_cli.drop_vy:.3f}, {args_cli.drop_vz:.3f})"
+            )
     print(summary)
     if args_cli.trampoline_mode == "spring" and args_cli.actor == "g1":
         print("[INFO]: Custom G1 mode uses the point-foot contact approximation on the ankle roll links.")

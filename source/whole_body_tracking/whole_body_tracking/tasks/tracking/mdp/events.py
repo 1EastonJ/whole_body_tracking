@@ -4,9 +4,14 @@ import torch
 from typing import TYPE_CHECKING, Literal
 
 import isaaclab.utils.math as math_utils
-from isaaclab.assets import Articulation, RigidObject
+from isaaclab.assets import Articulation, DeformableObject, RigidObject
 from isaaclab.envs.mdp.events import _randomize_prop_by_op
 from isaaclab.managers import EventTermCfg, ManagerTermBase, SceneEntityCfg
+
+from whole_body_tracking.utils.trampoline_deformable import (
+    build_trampoline_kinematic_targets,
+    reset_deformable_trampoline,
+)
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedEnv
@@ -174,3 +179,33 @@ def randomize_rigid_body_com(
 
     # Set the new coms
     asset.root_physx_view.set_coms(coms, env_ids)
+
+
+def reset_deformable_trampoline_event(
+    env: ManagerBasedEnv,
+    env_ids: torch.Tensor | None,
+    asset_cfg: SceneEntityCfg,
+    pin_width: float,
+):
+    """Reset a deformable trampoline back to its default nodal state on episode reset."""
+    trampoline: DeformableObject = env.scene[asset_cfg.name]
+    if env_ids is None:
+        env_ids = torch.arange(env.scene.num_envs, device=trampoline.device, dtype=torch.long)
+    else:
+        env_ids = torch.as_tensor(env_ids, device=trampoline.device, dtype=torch.long).reshape(-1)
+
+    cache = getattr(env, "_deformable_reset_targets_cache", None)
+    if cache is None:
+        cache = {}
+        setattr(env, "_deformable_reset_targets_cache", cache)
+
+    trampoline_targets = cache.get(asset_cfg.name)
+    if trampoline_targets is None or trampoline_targets.shape != trampoline.data.nodal_kinematic_target.shape:
+        trampoline_targets, _, _ = build_trampoline_kinematic_targets(
+            trampoline.data.default_nodal_state_w,
+            trampoline.data.nodal_kinematic_target,
+            pin_width=pin_width,
+        )
+        cache[asset_cfg.name] = trampoline_targets
+
+    reset_deformable_trampoline(trampoline, trampoline_targets, env_ids=env_ids)
