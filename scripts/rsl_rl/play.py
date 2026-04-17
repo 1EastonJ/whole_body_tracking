@@ -44,6 +44,30 @@ parser.add_argument(
 parser.add_argument("--command_vx", type=float, default=None, help="Fixed commanded forward velocity for hopping play.")
 parser.add_argument("--command_vy", type=float, default=None, help="Fixed commanded lateral velocity for hopping play.")
 parser.add_argument("--command_yaw", type=float, default=None, help="Fixed commanded yaw rate for hopping play.")
+parser.add_argument(
+    "--torque_stats",
+    action="store_true",
+    default=False,
+    help="Print computed/applied joint torque diagnostics while playing.",
+)
+parser.add_argument(
+    "--torque_stats_interval",
+    type=int,
+    default=50,
+    help="Environment step interval for printing torque diagnostics during play.",
+)
+parser.add_argument(
+    "--torque_stats_top_k",
+    type=int,
+    default=4,
+    help="How many joints to include in each printed torque diagnostic snapshot.",
+)
+parser.add_argument(
+    "--torque_env_id",
+    type=int,
+    default=0,
+    help="Environment index to inspect when printing torque diagnostics.",
+)
 # append RSL-RL cli arguments
 cli_args.add_rsl_rl_args(parser)
 # append AppLauncher cli args
@@ -143,6 +167,61 @@ def _configure_motion_source_for_play(env_cfg, motion_file: str | None, wandb_ru
     raise ValueError("--motion_file is required when playing a motion-based task from a local checkpoint.")
 
 
+def _is_full_slice(value) -> bool:
+    return isinstance(value, slice) and value.start is None and value.stop is None and value.step is None
+
+
+def _joint_indices_to_tensor(joint_indices, num_joints: int, device: torch.device) -> torch.Tensor:
+    if _is_full_slice(joint_indices):
+        return torch.arange(num_joints, device=device, dtype=torch.long)
+    if isinstance(joint_indices, torch.Tensor):
+        return joint_indices.to(device=device, dtype=torch.long)
+    return torch.as_tensor(joint_indices, device=device, dtype=torch.long)
+
+
+def _build_joint_effort_limits(robot) -> torch.Tensor:
+    effort_limits = robot.data.joint_effort_limits[0].clone()
+    for actuator in robot.actuators.values():
+        joint_indices = _joint_indices_to_tensor(actuator.joint_indices, robot.num_joints, robot.device)
+        effort_limits[joint_indices] = actuator.effort_limit[0]
+    return torch.clamp(effort_limits, min=1.0e-6)
+
+
+def _print_torque_stats(robot, effort_limits: torch.Tensor, play_step: int) -> None:
+    num_envs = robot.data.applied_torque.shape[0]
+    env_id = max(0, min(args_cli.torque_env_id, num_envs - 1))
+
+    computed = robot.data.computed_torque[env_id]
+    applied = robot.data.applied_torque[env_id]
+    joint_vel = robot.data.joint_vel[env_id]
+
+    computed_ratio = computed.abs() / effort_limits
+    applied_ratio = applied.abs() / effort_limits
+    clip_ratio = (computed - applied).abs() / effort_limits
+    top_metric = torch.maximum(computed_ratio, applied_ratio)
+    top_k = max(1, min(args_cli.torque_stats_top_k, top_metric.numel()))
+    _, top_indices = torch.topk(top_metric, k=top_k)
+    saturated = int((clip_ratio > 1.0e-3).sum().item())
+
+    print(
+        f"[TORQUE] step={play_step} env={env_id} "
+        f"max|computed|/limit={computed_ratio.max().item():.3f} "
+        f"max|applied|/limit={applied_ratio.max().item():.3f} "
+        f"saturated_joints={saturated}/{top_metric.numel()}"
+    )
+    for idx in top_indices.tolist():
+        print(
+            f"  {robot.data.joint_names[idx]}: "
+            f"comp={computed[idx].item():.2f}, "
+            f"app={applied[idx].item():.2f}, "
+            f"limit={effort_limits[idx].item():.2f}, "
+            f"vel={joint_vel[idx].item():.2f}, "
+            f"comp/lim={computed_ratio[idx].item():.3f}, "
+            f"app/lim={applied_ratio[idx].item():.3f}, "
+            f"clip/lim={clip_ratio[idx].item():.3f}"
+        )
+
+
 @hydra_task_config(args_cli.task, "rsl_rl_cfg_entry_point")
 def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agent_cfg: RslRlOnPolicyRunnerCfg):
     """Play with RSL-RL agent."""
@@ -170,6 +249,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     _configure_motion_source_for_play(env_cfg, args_cli.motion_file, wandb_run)
 
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
+    base_env = env.unwrapped
     _configure_manual_command_for_play(env)
     log_dir = os.path.dirname(resume_path)
 
@@ -188,6 +268,14 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         env = multi_agent_to_single_agent(env)
 
     env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
+
+    torque_effort_limits = None
+    if args_cli.torque_stats:
+        torque_effort_limits = _build_joint_effort_limits(base_env.scene["robot"])
+        print(
+            f"[INFO]: Torque diagnostics enabled for env {args_cli.torque_env_id} "
+            f"every {max(args_cli.torque_stats_interval, 1)} play steps."
+        )
 
     ppo_runner = OnPolicyRunner(env, agent_cfg.to_dict(), log_dir=None, device=agent_cfg.device)
     ppo_runner.load(resume_path)
@@ -215,16 +303,19 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     obs_output = env.get_observations()
     obs = obs_output[0] if isinstance(obs_output, tuple) else obs_output
-    timestep = 0
+    play_step = 0
     while simulation_app.is_running():
         with torch.inference_mode():
             actions = policy(obs)
             step_output = env.step(actions)
             obs = step_output[0] if isinstance(step_output, tuple) else step_output
-        if args_cli.video:
-            timestep += 1
-            if timestep == args_cli.video_length:
-                break
+
+        play_step += 1
+        if args_cli.torque_stats and play_step % max(args_cli.torque_stats_interval, 1) == 0:
+            _print_torque_stats(base_env.scene["robot"], torque_effort_limits, play_step)
+
+        if args_cli.video and play_step == args_cli.video_length:
+            break
 
     env.close()
 

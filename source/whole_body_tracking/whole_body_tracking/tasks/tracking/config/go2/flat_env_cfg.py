@@ -4,6 +4,7 @@ import os
 
 from isaaclab.assets import DeformableObjectCfg
 from isaaclab.managers import EventTermCfg as EventTerm
+from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.terrains import TerrainImporterCfg
@@ -13,6 +14,8 @@ import whole_body_tracking.tasks.tracking.mdp as mdp
 from whole_body_tracking.robots.go2 import (
     GO2_ACTION_SCALE,
     GO2_CFG,
+    GO2_FRONTFLIP_ACTION_SCALE,
+    GO2_FRONTFLIP_CFG,
     GO2_FOOT_BODY_NAMES,
     GO2_NON_FOOT_CONTACT_BODY_NAMES,
     GO2_TRACKING_ANCHOR_BODY_NAME,
@@ -44,6 +47,35 @@ def _apply_play_overrides(cfg: TrackingEnvCfg) -> TrackingEnvCfg:
     # Keep the play camera static so manual mouse control is not overridden by asset tracking.
     cfg.viewer.origin_type = 'world'
     return cfg
+
+
+
+def _frontflip_joint_symmetry_reward() -> RewTerm:
+    return RewTerm(
+        func=mdp.joint_mirror_symmetry_l2,
+        weight=-0.5,
+        params={
+            "asset_cfg": SceneEntityCfg("robot"),
+            "left_joint_names": [
+                "FL_hip_joint",
+                "FL_thigh_joint",
+                "FL_calf_joint",
+                "RL_hip_joint",
+                "RL_thigh_joint",
+                "RL_calf_joint",
+            ],
+            "right_joint_names": [
+                "FR_hip_joint",
+                "FR_thigh_joint",
+                "FR_calf_joint",
+                "RR_hip_joint",
+                "RR_thigh_joint",
+                "RR_calf_joint",
+            ],
+            "mirror_signs": [-1.0, 1.0, 1.0, -1.0, 1.0, 1.0],
+            "vel_weight": 0.01,
+        },
+    )
 
 
 @configclass
@@ -102,6 +134,50 @@ class Go2FlatNoStateEstimationEnvCfg(Go2FlatEnvCfg):
 
 
 @configclass
+class Go2FlatNoStateEstimationFrontFlipEnvCfg(Go2FlatNoStateEstimationEnvCfg):
+    def __post_init__(self):
+        super().__post_init__()
+        self.scene.robot = GO2_FRONTFLIP_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+        self.actions.joint_pos.scale = GO2_FRONTFLIP_ACTION_SCALE
+        # Front flips spend more time near inverted base orientations, so the generic
+        # anchor orientation termination is overly aggressive for this motion family.
+        self.commands.motion.sampling_mode = "adaptive"
+        self.events.physics_material.params["static_friction_range"] = (1.2, 1.2)
+        self.events.physics_material.params["dynamic_friction_range"] = (1.2, 1.2)
+        self.terminations.anchor_ori.params["threshold"] = 1.0
+        self.terminations.ee_body_pos.params["threshold"] = 0.6
+        # self.terminations.non_foot_contact = DoneTerm(
+        #     func=mdp.illegal_contact,
+        #     params={
+        #         "sensor_cfg": SceneEntityCfg("contact_forces", body_names=list(GO2_NON_FOOT_CONTACT_BODY_NAMES)),
+        #         "threshold": 1.0,
+        #     },
+        # )
+        # Front flips need stronger lift and rotational tracking, and less smoothing pressure.
+        # self.rewards.motion_global_anchor_yaw = RewTerm(
+        #     func=mdp.motion_global_anchor_yaw_error_exp,
+        #     weight=1.5,
+        #     params={"command_name": "motion", "std": 0.2},
+        # )
+        # self.rewards.motion_global_anchor_yaw_penalty = RewTerm(
+        #     func=mdp.motion_global_anchor_yaw_penalty,
+        #     weight=-0.5,
+        #     params={"command_name": "motion", "std": 0.3},
+        # )
+        self.rewards.motion_global_anchor_ori.weight = 2.5
+        self.rewards.motion_body_lin_vel.weight = 2.0
+        self.rewards.motion_body_ang_vel.weight = 5.0
+        self.rewards.action_rate_l2.weight = -5e-3
+        self.rewards.joint_limit.weight = -2.0
+        self.rewards.left_right_joint_symmetry = _frontflip_joint_symmetry_reward()
+        # self.rewards.anchor_height_floor = RewTerm(
+        #     func=mdp.anchor_height_below_reference_penalty,
+        #     weight=-5.0,
+        #     params={"command_name": "motion", "margin": 0.08},
+        # )
+
+
+@configclass
 class Go2TrampolineNoStateEstimationEnvCfg(Go2FlatNoStateEstimationEnvCfg):
     scene: Go2TrampolineSceneCfg = Go2TrampolineSceneCfg(
         num_envs=4096,
@@ -139,8 +215,40 @@ class Go2TrampolineNoStateEstimationEnvCfg(Go2FlatNoStateEstimationEnvCfg):
         )
 
 
+@configclass
+class Go2TrampolineNoStateEstimationFrontFlipEnvCfg(Go2TrampolineNoStateEstimationEnvCfg):
+    def __post_init__(self):
+        super().__post_init__()
+        self.scene.robot = GO2_FRONTFLIP_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+        self.actions.joint_pos.scale = GO2_FRONTFLIP_ACTION_SCALE
+        self.terminations.anchor_ori.params["threshold"] = 1.5
+        self.terminations.ee_body_pos.params["threshold"] = 0.7
+        # Front flips need stronger lift and rotational tracking, and less smoothing pressure.
+        self.rewards.motion_global_anchor_yaw = RewTerm(
+            func=mdp.motion_global_anchor_yaw_error_exp,
+            weight=2.0,
+            params={"command_name": "motion", "std": 0.3},
+        )
+        self.rewards.motion_body_lin_vel.weight = 2.0
+        self.rewards.motion_body_ang_vel.weight = 3.0
+        self.rewards.action_rate_l2.weight = -3e-2
+        self.rewards.left_right_joint_symmetry = _frontflip_joint_symmetry_reward()
+        self.rewards.anchor_height_floor = RewTerm(
+            func=mdp.anchor_height_below_reference_penalty,
+            weight=-10.0,
+            params={"command_name": "motion", "margin": 0.1},
+        )
+
+
 def go2_trampoline_no_state_estimation_env_cfg() -> Go2TrampolineNoStateEstimationEnvCfg:
     cfg = Go2TrampolineNoStateEstimationEnvCfg()
+    if _is_play_mode():
+        cfg = _apply_play_overrides(cfg)
+    return cfg
+
+
+def go2_trampoline_no_state_estimation_frontflip_env_cfg() -> Go2TrampolineNoStateEstimationFrontFlipEnvCfg:
+    cfg = Go2TrampolineNoStateEstimationFrontFlipEnvCfg()
     if _is_play_mode():
         cfg = _apply_play_overrides(cfg)
     return cfg
@@ -155,6 +263,13 @@ def go2_flat_env_cfg() -> Go2FlatEnvCfg:
 
 def go2_flat_no_state_estimation_env_cfg() -> Go2FlatNoStateEstimationEnvCfg:
     cfg = Go2FlatNoStateEstimationEnvCfg()
+    if _is_play_mode():
+        cfg = _apply_play_overrides(cfg)
+    return cfg
+
+
+def go2_flat_no_state_estimation_frontflip_env_cfg() -> Go2FlatNoStateEstimationFrontFlipEnvCfg:
+    cfg = Go2FlatNoStateEstimationFrontFlipEnvCfg()
     if _is_play_mode():
         cfg = _apply_play_overrides(cfg)
     return cfg

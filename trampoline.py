@@ -103,8 +103,8 @@ parser.add_argument(
 )
 
 # built-in deformable trampoline options
-parser.add_argument("--pin_width", type=float, default=4.0, help="Pinned rim width in meters for the deformable trampoline.")
-parser.add_argument("--youngs_modulus", type=float, default=1.0e8, help="Built-in trampoline Young's modulus.")
+parser.add_argument("--pin_width", type=float, default=3.0, help="Pinned rim width in meters for the deformable trampoline.")
+parser.add_argument("--youngs_modulus", type=float, default=3.0e7, help="Built-in trampoline Young's modulus.")
 parser.add_argument("--mass", type=float, default=10.0, help="Built-in trampoline mass.")
 parser.add_argument("--sim_resolution", type=int, default=20, help="Built-in trampoline hexahedral resolution.")
 parser.add_argument(
@@ -116,7 +116,7 @@ parser.add_argument(
 parser.add_argument(
     "--show_trampoline_nodes",
     action="store_true",
-    default=False,
+    default=True,
     help="Visualize built-in trampoline nodes, colored by pinned vs. free nodes.",
 )
 parser.add_argument(

@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.sensors import ContactSensor
-from isaaclab.utils.math import quat_error_magnitude
+from isaaclab.utils.math import quat_error_magnitude, yaw_quat
 
 from whole_body_tracking.tasks.tracking.mdp.commands import MotionCommand
 
@@ -26,6 +26,30 @@ def motion_global_anchor_position_error_exp(env: ManagerBasedRLEnv, command_name
 def motion_global_anchor_orientation_error_exp(env: ManagerBasedRLEnv, command_name: str, std: float) -> torch.Tensor:
     command: MotionCommand = env.command_manager.get_term(command_name)
     error = quat_error_magnitude(command.anchor_quat_w, command.robot_anchor_quat_w) ** 2
+    return torch.exp(-error / std**2)
+
+
+def motion_global_anchor_yaw_error_exp(env: ManagerBasedRLEnv, command_name: str, std: float) -> torch.Tensor:
+    command: MotionCommand = env.command_manager.get_term(command_name)
+    anchor_yaw_quat = yaw_quat(command.anchor_quat_w)
+    robot_anchor_yaw_quat = yaw_quat(command.robot_anchor_quat_w)
+    error = quat_error_magnitude(anchor_yaw_quat, robot_anchor_yaw_quat) ** 2
+    return torch.exp(-error / std**2)
+
+
+def motion_global_anchor_yaw_penalty(env: ManagerBasedRLEnv, command_name: str, std: float) -> torch.Tensor:
+    command: MotionCommand = env.command_manager.get_term(command_name)
+    anchor_yaw_quat = yaw_quat(command.anchor_quat_w)
+    robot_anchor_yaw_quat = yaw_quat(command.robot_anchor_quat_w)
+    error = quat_error_magnitude(anchor_yaw_quat, robot_anchor_yaw_quat) ** 2
+    return 1.0 - torch.exp(-error / std**2)
+
+
+def motion_global_anchor_angular_velocity_error_exp(
+    env: ManagerBasedRLEnv, command_name: str, std: float
+) -> torch.Tensor:
+    command: MotionCommand = env.command_manager.get_term(command_name)
+    error = torch.sum(torch.square(command.anchor_ang_vel_w - command.robot_anchor_ang_vel_w), dim=-1)
     return torch.exp(-error / std**2)
 
 
@@ -80,3 +104,39 @@ def feet_contact_time(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg, thresh
     last_contact_time = contact_sensor.data.last_contact_time[:, sensor_cfg.body_ids]
     reward = torch.sum((last_contact_time < threshold) * first_air, dim=-1)
     return reward
+
+
+def anchor_height_below_reference_penalty(
+    env: ManagerBasedRLEnv, command_name: str, margin: float
+) -> torch.Tensor:
+    command: MotionCommand = env.command_manager.get_term(command_name)
+    deficit = command.anchor_pos_w[:, 2] - command.robot_anchor_pos_w[:, 2] - margin
+    return torch.clamp(deficit, min=0.0)
+
+
+
+def joint_mirror_symmetry_l2(
+    env: ManagerBasedRLEnv,
+    left_joint_names: list[str],
+    right_joint_names: list[str],
+    mirror_signs: list[float],
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    vel_weight: float = 0.0,
+) -> torch.Tensor:
+    """Penalize left/right joint asymmetry for sagittal-plane motions.
+
+    ``mirror_signs`` is ``-1`` for mirrored hip ab/adduction joints and ``1`` for
+    joints that should match directly, such as thigh and calf flexion.
+    """
+    asset = env.scene[asset_cfg.name]
+    joint_name_to_id = {name: idx for idx, name in enumerate(asset.data.joint_names)}
+    left_ids = torch.tensor([joint_name_to_id[name] for name in left_joint_names], device=asset.data.joint_pos.device)
+    right_ids = torch.tensor([joint_name_to_id[name] for name in right_joint_names], device=asset.data.joint_pos.device)
+    signs = torch.tensor(mirror_signs, dtype=asset.data.joint_pos.dtype, device=asset.data.joint_pos.device)
+
+    pos_error = asset.data.joint_pos[:, left_ids] - signs * asset.data.joint_pos[:, right_ids]
+    penalty = torch.mean(torch.square(pos_error), dim=1)
+    if vel_weight > 0.0:
+        vel_error = asset.data.joint_vel[:, left_ids] - signs * asset.data.joint_vel[:, right_ids]
+        penalty = penalty + vel_weight * torch.mean(torch.square(vel_error), dim=1)
+    return penalty
