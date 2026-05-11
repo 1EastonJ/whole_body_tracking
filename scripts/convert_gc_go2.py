@@ -15,7 +15,7 @@ from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser(description="Replay a Go2 motion CSV and export it as a tracking .npz file.")
 parser.add_argument("--input_file", type=str, required=True, help="The path to the input Go2 motion CSV file.")
-parser.add_argument("--input_fps", type=int, default=30, help="The FPS of the input motion.")
+parser.add_argument("--input_fps", type=int, default=50, help="The FPS of the input motion.")
 parser.add_argument(
     "--frame_range",
     nargs=2,
