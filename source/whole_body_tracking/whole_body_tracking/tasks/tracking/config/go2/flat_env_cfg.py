@@ -78,6 +78,18 @@ def _frontflip_joint_symmetry_reward() -> RewTerm:
     )
 
 
+def _frontflip_rear_calf_near_limit_reward() -> RewTerm:
+    return RewTerm(
+        func=mdp.joint_near_lower_limit_penalty,
+        weight=-0.25,
+        params={
+            "asset_cfg": SceneEntityCfg("robot"),
+            "joint_names": ["RL_calf_joint", "RR_calf_joint"],
+            "lower_limit_margin": 0.13,
+        },
+    )
+
+
 @configclass
 class Go2TrampolineSceneCfg(MySceneCfg):
     trampoline: DeformableObjectCfg = make_trampoline_cfg(
@@ -142,39 +154,18 @@ class Go2FlatNoStateEstimationFrontFlipEnvCfg(Go2FlatNoStateEstimationEnvCfg):
         # Front flips spend more time near inverted base orientations, so the generic
         # anchor orientation termination is overly aggressive for this motion family.
         self.commands.motion.sampling_mode = "adaptive"
-        self.events.physics_material.params["static_friction_range"] = (1.2, 1.2)
-        self.events.physics_material.params["dynamic_friction_range"] = (1.2, 1.2)
+        self.events.physics_material.params["static_friction_range"] = (0.3, 1.2)
+        self.events.physics_material.params["dynamic_friction_range"] = (0.3, 1.2)
         self.terminations.anchor_ori.params["threshold"] = 1.0
         self.terminations.ee_body_pos.params["threshold"] = 0.6
-        # self.terminations.non_foot_contact = DoneTerm(
-        #     func=mdp.illegal_contact,
-        #     params={
-        #         "sensor_cfg": SceneEntityCfg("contact_forces", body_names=list(GO2_NON_FOOT_CONTACT_BODY_NAMES)),
-        #         "threshold": 1.0,
-        #     },
-        # )
-        # Front flips need stronger lift and rotational tracking, and less smoothing pressure.
-        # self.rewards.motion_global_anchor_yaw = RewTerm(
-        #     func=mdp.motion_global_anchor_yaw_error_exp,
-        #     weight=1.5,
-        #     params={"command_name": "motion", "std": 0.2},
-        # )
-        # self.rewards.motion_global_anchor_yaw_penalty = RewTerm(
-        #     func=mdp.motion_global_anchor_yaw_penalty,
-        #     weight=-0.5,
-        #     params={"command_name": "motion", "std": 0.3},
-        # )
         self.rewards.motion_global_anchor_ori.weight = 2.5
         self.rewards.motion_body_lin_vel.weight = 2.0
         self.rewards.motion_body_ang_vel.weight = 5.0
         self.rewards.action_rate_l2.weight = -5e-3
         self.rewards.joint_limit.weight = -2.0
         self.rewards.left_right_joint_symmetry = _frontflip_joint_symmetry_reward()
-        # self.rewards.anchor_height_floor = RewTerm(
-        #     func=mdp.anchor_height_below_reference_penalty,
-        #     weight=-5.0,
-        #     params={"command_name": "motion", "margin": 0.08},
-        # )
+        self.rewards.rear_calf_near_limit = _frontflip_rear_calf_near_limit_reward()
+
 
 
 @configclass
@@ -221,23 +212,18 @@ class Go2TrampolineNoStateEstimationFrontFlipEnvCfg(Go2TrampolineNoStateEstimati
         super().__post_init__()
         self.scene.robot = GO2_FRONTFLIP_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
         self.actions.joint_pos.scale = GO2_FRONTFLIP_ACTION_SCALE
-        self.terminations.anchor_ori.params["threshold"] = 1.5
-        self.terminations.ee_body_pos.params["threshold"] = 0.7
-        # Front flips need stronger lift and rotational tracking, and less smoothing pressure.
-        self.rewards.motion_global_anchor_yaw = RewTerm(
-            func=mdp.motion_global_anchor_yaw_error_exp,
-            weight=2.0,
-            params={"command_name": "motion", "std": 0.3},
-        )
+        self.commands.motion.sampling_mode = "adaptive"
+        self.events.physics_material.params["static_friction_range"] = (0.3, 1.2)
+        self.events.physics_material.params["dynamic_friction_range"] = (0.3, 1.2)
+        self.terminations.anchor_ori.params["threshold"] = 1.0
+        self.terminations.ee_body_pos.params["threshold"] = 0.6
+        self.rewards.motion_global_anchor_ori.weight = 2.5
         self.rewards.motion_body_lin_vel.weight = 2.0
-        self.rewards.motion_body_ang_vel.weight = 3.0
-        self.rewards.action_rate_l2.weight = -3e-2
+        self.rewards.motion_body_ang_vel.weight = 5.0
+        self.rewards.action_rate_l2.weight = -5e-3
+        self.rewards.joint_limit.weight = -2.0
         self.rewards.left_right_joint_symmetry = _frontflip_joint_symmetry_reward()
-        self.rewards.anchor_height_floor = RewTerm(
-            func=mdp.anchor_height_below_reference_penalty,
-            weight=-10.0,
-            params={"command_name": "motion", "margin": 0.1},
-        )
+        self.rewards.rear_calf_near_limit = _frontflip_rear_calf_near_limit_reward()
 
 
 def go2_trampoline_no_state_estimation_env_cfg() -> Go2TrampolineNoStateEstimationEnvCfg:

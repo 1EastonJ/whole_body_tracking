@@ -140,3 +140,23 @@ def joint_mirror_symmetry_l2(
         vel_error = asset.data.joint_vel[:, left_ids] - signs * asset.data.joint_vel[:, right_ids]
         penalty = penalty + vel_weight * torch.mean(torch.square(vel_error), dim=1)
     return penalty
+
+
+def joint_near_lower_limit_penalty(
+    env: ManagerBasedRLEnv,
+    joint_names: list[str],
+    lower_limit_margin: float,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Penalize joints that approach their lower position limits.
+
+    The penalty is zero while a joint stays farther than ``lower_limit_margin``
+    away from its lower limit, and increases smoothly once it enters that band.
+    """
+    asset = env.scene[asset_cfg.name]
+    joint_name_to_id = {name: idx for idx, name in enumerate(asset.data.joint_names)}
+    joint_ids = torch.tensor([joint_name_to_id[name] for name in joint_names], device=asset.data.joint_pos.device)
+    lower_limits = asset.data.joint_pos_limits[:, joint_ids, 0]
+    dist_to_lower = asset.data.joint_pos[:, joint_ids] - lower_limits
+    normalized_violation = torch.clamp((lower_limit_margin - dist_to_lower) / lower_limit_margin, min=0.0)
+    return torch.mean(torch.square(normalized_violation), dim=1)
