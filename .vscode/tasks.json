@@ -7,7 +7,7 @@
       "command": "bash",
       "args": [
         "-lc",
-        "conda run --no-capture-output -n ${input:condaEnvName} python scripts/rsl_rl/train.py --task Tracking-Flat-Go2-No-State-Estimation-v0 --registry_name ${input:registryName} --num_envs ${input:rightFlipNumEnvs} --max_iterations ${input:rightFlipMaxIterations} --headless --logger wandb --log_project_name go2_tracking --run_name ${input:rightFlipRunName}"
+        "conda run --no-capture-output -n ${input:condaEnvName} python scripts/rsl_rl/train.py --task Tracking-Flat-Go2-No-State-Estimation-v0 --motion_file ${input:rightFlipMotionFile} --num_envs ${input:rightFlipNumEnvs} --max_iterations ${input:rightFlipMaxIterations} --headless --logger wandb --log_project_name go2_tracking --run_name ${input:rightFlipRunName}"
       ],
       "options": {
         "cwd": "${workspaceFolder}"
@@ -17,7 +17,8 @@
         "panel": "dedicated",
         "focus": true
       },
-      "problemMatcher": []
+      "problemMatcher": [],
+      "group": "build"
     },
     {
       "label": "Play / Right Flip",
@@ -35,7 +36,84 @@
         "panel": "dedicated",
         "focus": true
       },
-      "problemMatcher": []
+      "problemMatcher": [],
+      "group": "build"
+    },
+    {
+      "label": "Train / Right Flip Trampoline",
+      "type": "shell",
+      "command": "bash",
+      "args": [
+        "-lc",
+        "conda run --no-capture-output -n ${input:condaEnvName} python scripts/rsl_rl/train.py --task Tracking-Trampoline-Go2-No-State-Estimation-v0 --motion_file ${input:rightFlipMotionFile} --num_envs ${input:rightFlipTrampolineNumEnvs} --max_iterations ${input:rightFlipTrampolineMaxIterations} --headless --logger wandb --log_project_name go2_tracking_trampoline --run_name ${input:rightFlipTrampolineRunName}"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": true
+      },
+      "problemMatcher": [],
+      "group": "build"
+    },
+    {
+      "label": "Play / Right Flip Trampoline",
+      "type": "shell",
+      "command": "bash",
+      "args": [
+        "-lc",
+        "conda run --no-capture-output -n ${input:condaEnvName} python scripts/rsl_rl/play.py --task Tracking-Trampoline-Go2-No-State-Estimation-v0 --checkpoint_path ${input:rightFlipTrampolineCheckpointPath} --motion_file ${input:rightFlipMotionFile} --num_envs ${input:rightFlipTrampolinePlayNumEnvs}"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": true
+      },
+      "problemMatcher": [],
+      "group": "build"
+    },
+    {
+      "label": "Train / Left Flip Trampoline",
+      "type": "shell",
+      "command": "bash",
+      "args": [
+        "-lc",
+        "conda run --no-capture-output -n ${input:condaEnvName} python scripts/rsl_rl/train.py --task Tracking-Trampoline-Go2-No-State-Estimation-v0 --motion_file ${input:leftFlipMotionFile} --num_envs ${input:leftFlipTrampolineNumEnvs} --max_iterations ${input:leftFlipTrampolineMaxIterations} --headless --logger wandb --log_project_name go2_tracking_trampoline --run_name ${input:leftFlipTrampolineRunName}"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": true
+      },
+      "problemMatcher": [],
+      "group": "build"
+    },
+    {
+      "label": "Play / Left Flip Trampoline",
+      "type": "shell",
+      "command": "bash",
+      "args": [
+        "-lc",
+        "conda run --no-capture-output -n ${input:condaEnvName} python scripts/rsl_rl/play.py --task Tracking-Trampoline-Go2-No-State-Estimation-v0 --checkpoint_path ${input:leftFlipTrampolineCheckpointPath} --motion_file ${input:leftFlipMotionFile} --num_envs ${input:leftFlipTrampolinePlayNumEnvs}"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": true
+      },
+      "problemMatcher": [],
+      "group": "build"
     },
     {
       "label": "Train / Hopping Flat",
@@ -53,7 +131,8 @@
         "panel": "dedicated",
         "focus": true
       },
-      "problemMatcher": []
+      "problemMatcher": [],
+      "group": "build"
     },
     {
       "label": "Play / Hopping Flat",
@@ -71,7 +150,8 @@
         "panel": "dedicated",
         "focus": true
       },
-      "problemMatcher": []
+      "problemMatcher": [],
+      "group": "build"
     },
     {
       "label": "Train / Hopping Trampoline",
@@ -79,7 +159,7 @@
       "command": "bash",
       "args": [
         "-lc",
-        "conda run --no-capture-output -n ${input:condaEnvName} python scripts/rsl_rl/train.py --task Hopping-Trampoline-Go2-v0 --num_envs ${input:hoppingTrampolineNumEnvs} --max_iterations ${input:hoppingTrampolineMaxIterations} --headless --logger wandb --log_project_name go2_trampoline --run_name ${input:hoppingTrampolineRunName}"
+        "conda run --no-capture-output -n ${input:condaEnvName} python scripts/rsl_rl/train.py --task Hopping-Trampoline-Go2-TrackingCfg-v0 --num_envs ${input:hoppingTrampolineNumEnvs} --max_iterations ${input:hoppingTrampolineMaxIterations} --headless --logger wandb --log_project_name go2_trampoline_tracking_cfg --run_name ${input:hoppingTrampolineRunName}"
       ],
       "options": {
         "cwd": "${workspaceFolder}"
@@ -89,7 +169,8 @@
         "panel": "dedicated",
         "focus": true
       },
-      "problemMatcher": []
+      "problemMatcher": [],
+      "group": "build"
     },
     {
       "label": "Play / Hopping Trampoline",
@@ -97,7 +178,7 @@
       "command": "bash",
       "args": [
         "-lc",
-        "conda run --no-capture-output -n ${input:condaEnvName} python scripts/rsl_rl/play.py --task Hopping-Trampoline-Go2-v0 --checkpoint_path ${input:hoppingTrampolineCheckpointPath} --num_envs ${input:hoppingTrampolinePlayNumEnvs} --command_vx ${input:hoppingPlayCommandVx} --command_vy ${input:hoppingPlayCommandVy} --command_yaw ${input:hoppingPlayCommandYaw}"
+        "conda run --no-capture-output -n ${input:condaEnvName} python scripts/rsl_rl/play.py --task Hopping-Trampoline-Go2-TrackingCfg-v0 --checkpoint_path ${input:hoppingTrampolineCheckpointPath} --num_envs ${input:hoppingTrampolinePlayNumEnvs} --command_vx ${input:hoppingPlayCommandVx} --command_vy ${input:hoppingPlayCommandVy} --command_yaw ${input:hoppingPlayCommandYaw}"
       ],
       "options": {
         "cwd": "${workspaceFolder}"
@@ -107,7 +188,8 @@
         "panel": "dedicated",
         "focus": true
       },
-      "problemMatcher": []
+      "problemMatcher": [],
+      "group": "build"
     }
   ],
   "inputs": [
@@ -116,12 +198,6 @@
       "type": "promptString",
       "description": "conda environment name",
       "default": "env_isaaclab232"
-    },
-    {
-      "id": "registryName",
-      "type": "promptString",
-      "description": "wandb registry motion name",
-      "default": "your-org/wandb-registry-motions/go2_sideflip_right_fps50"
     },
     {
       "id": "rightFlipRunName",
@@ -160,6 +236,42 @@
       "default": "1"
     },
     {
+      "id": "leftFlipTrampolineRunName",
+      "type": "promptString",
+      "description": "wandb run name for left flip trampoline training",
+      "default": "go2_leftflip_trampoline"
+    },
+    {
+      "id": "leftFlipMotionFile",
+      "type": "promptString",
+      "description": "left flip motion file path relative to workspace",
+      "default": "artifacts/go2_leftflip:v0/motion.npz"
+    },
+    {
+      "id": "leftFlipTrampolineNumEnvs",
+      "type": "promptString",
+      "description": "number of environments for left flip trampoline training",
+      "default": "2048"
+    },
+    {
+      "id": "leftFlipTrampolineMaxIterations",
+      "type": "promptString",
+      "description": "maximum PPO iterations for left flip trampoline training",
+      "default": "5000"
+    },
+    {
+      "id": "leftFlipTrampolineCheckpointPath",
+      "type": "promptString",
+      "description": "left flip trampoline checkpoint path relative to workspace",
+      "default": "logs/rsl_rl/go2_tracking_trampoline/enter_left_flip_run_name/model_3500.pt"
+    },
+    {
+      "id": "leftFlipTrampolinePlayNumEnvs",
+      "type": "promptString",
+      "description": "number of environments for left flip trampoline play",
+      "default": "1"
+    },
+    {
       "id": "hoppingFlatRunName",
       "type": "promptString",
       "description": "wandb run name for flat hopping training",
@@ -193,7 +305,7 @@
       "id": "hoppingTrampolineRunName",
       "type": "promptString",
       "description": "wandb run name for trampoline hopping training",
-      "default": "go2_hopping_trampoline_4096env_5000it"
+      "default": "go2_hopping_trampoline_tracking_cfg_4096env_5000it"
     },
     {
       "id": "hoppingTrampolineNumEnvs",
@@ -211,7 +323,7 @@
       "id": "hoppingTrampolineCheckpointPath",
       "type": "promptString",
       "description": "trampoline hopping checkpoint path relative to workspace",
-      "default": "logs/rsl_rl/go2_jump_trampoline/2026-03-25_02-43-44/model_3500.pt"
+      "default": "logs/rsl_rl/go2_jump_trampoline_tracking_cfg/2026-04-02_20-19-47/model_1500.pt"
     },
     {
       "id": "hoppingTrampolinePlayNumEnvs",
@@ -236,6 +348,36 @@
       "type": "promptString",
       "description": "fixed hopping play yaw rate",
       "default": "0.0"
+    },
+    {
+      "id": "rightFlipTrampolineRunName",
+      "type": "promptString",
+      "description": "wandb run name for trampoline right flip training",
+      "default": "go2_sideflip_right_fps50_trampoline_4096env_10k"
+    },
+    {
+      "id": "rightFlipTrampolineNumEnvs",
+      "type": "promptString",
+      "description": "number of environments for trampoline right flip training",
+      "default": "4096"
+    },
+    {
+      "id": "rightFlipTrampolineMaxIterations",
+      "type": "promptString",
+      "description": "maximum PPO iterations for trampoline right flip training",
+      "default": "10000"
+    },
+    {
+      "id": "rightFlipTrampolineCheckpointPath",
+      "type": "promptString",
+      "description": "trampoline right flip checkpoint path relative to workspace",
+      "default": "logs/rsl_rl/go2_tracking_trampoline/enter_run_name/model_3500.pt"
+    },
+    {
+      "id": "rightFlipTrampolinePlayNumEnvs",
+      "type": "promptString",
+      "description": "number of environments for trampoline right flip play",
+      "default": "1"
     }
   ]
 }
