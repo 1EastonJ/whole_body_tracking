@@ -3,6 +3,7 @@
 """Launch Isaac Sim Simulator first."""
 
 import argparse
+import importlib.metadata
 import os
 import pathlib
 import sys
@@ -99,7 +100,12 @@ from isaaclab.envs import (
     multi_agent_to_single_agent,
 )
 from isaaclab.utils.dict import print_dict
-from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlVecEnvWrapper
+from isaaclab_rl.rsl_rl import (
+    RslRlOnPolicyRunnerCfg,
+    RslRlVecEnvWrapper,
+    handle_deprecated_rsl_rl_cfg,
+    handle_deprecated_rsl_rl_checkpoint,
+)
 from isaaclab_tasks.utils import get_checkpoint_path
 from isaaclab_tasks.utils.hydra import hydra_task_config
 
@@ -107,6 +113,13 @@ from isaaclab_tasks.utils.hydra import hydra_task_config
 import whole_body_tracking.tasks  # noqa: F401
 from whole_body_tracking.utils.exporter import attach_onnx_metadata, export_motion_policy_as_onnx, export_policy_as_onnx
 from whole_body_tracking.utils.task_utils import env_cfg_requires_motion, env_requires_motion
+
+
+def _get_rsl_rl_version() -> str:
+    try:
+        return importlib.metadata.version("rsl-rl-lib")
+    except importlib.metadata.PackageNotFoundError:
+        return importlib.metadata.version("rsl-rl")
 
 
 def _download_wandb_checkpoint(wandb_path: str) -> tuple[str, str, object]:
@@ -226,6 +239,8 @@ def _print_torque_stats(robot, effort_limits: torch.Tensor, play_step: int) -> N
 def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agent_cfg: RslRlOnPolicyRunnerCfg):
     """Play with RSL-RL agent."""
     agent_cfg = cli_args.parse_rsl_rl_cfg(args_cli.task, args_cli)
+    rsl_rl_version = _get_rsl_rl_version()
+    agent_cfg = handle_deprecated_rsl_rl_cfg(agent_cfg, rsl_rl_version)
     env_cfg.scene.num_envs = args_cli.num_envs if args_cli.num_envs is not None else env_cfg.scene.num_envs
 
     log_root_path = os.path.join("logs", "rsl_rl", agent_cfg.experiment_name)
@@ -247,6 +262,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         print(f"[INFO]: Loading model checkpoint from: {resume_path}")
 
     _configure_motion_source_for_play(env_cfg, args_cli.motion_file, wandb_run)
+    resume_path = handle_deprecated_rsl_rl_checkpoint(resume_path, rsl_rl_version)
 
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
     base_env = env.unwrapped
@@ -278,28 +294,35 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         )
 
     ppo_runner = OnPolicyRunner(env, agent_cfg.to_dict(), log_dir=None, device=agent_cfg.device)
-    ppo_runner.load(resume_path)
+    ppo_runner.load(
+        resume_path,
+        load_cfg={"actor": True, "critic": False, "optimizer": False, "iteration": True, "rnd": False},
+        strict=False,
+    )
 
     policy = ppo_runner.get_inference_policy(device=env.unwrapped.device)
     obs_normalizer = getattr(ppo_runner, "obs_normalizer", None)
 
     export_model_dir = os.path.join(os.path.dirname(resume_path), "exported")
-    if env_requires_motion(env.unwrapped):
-        export_motion_policy_as_onnx(
-            env.unwrapped,
-            ppo_runner.alg.policy,
-            normalizer=obs_normalizer,
-            path=export_model_dir,
-            filename="policy.onnx",
-        )
+    if hasattr(ppo_runner.alg, "policy"):
+        if env_requires_motion(env.unwrapped):
+            export_motion_policy_as_onnx(
+                env.unwrapped,
+                ppo_runner.alg.policy,
+                normalizer=obs_normalizer,
+                path=export_model_dir,
+                filename="policy.onnx",
+            )
+        else:
+            export_policy_as_onnx(
+                ppo_runner.alg.policy,
+                normalizer=obs_normalizer,
+                path=export_model_dir,
+                filename="policy.onnx",
+            )
+        attach_onnx_metadata(env.unwrapped, run_path_for_metadata, export_model_dir)
     else:
-        export_policy_as_onnx(
-            ppo_runner.alg.policy,
-            normalizer=obs_normalizer,
-            path=export_model_dir,
-            filename="policy.onnx",
-        )
-    attach_onnx_metadata(env.unwrapped, run_path_for_metadata, export_model_dir)
+        print("[INFO]: Skipping legacy ONNX export because this rsl-rl version uses separate actor/critic models.")
 
     obs_output = env.get_observations()
     obs = obs_output[0] if isinstance(obs_output, tuple) else obs_output
