@@ -185,7 +185,8 @@ def reset_deformable_trampoline_event(
     env: ManagerBasedEnv,
     env_ids: torch.Tensor | None,
     asset_cfg: SceneEntityCfg,
-    pin_width: float,
+    pin_width: float | None = None,
+    pin_radius: float | torch.Tensor | None = None,
 ):
     """Reset a deformable trampoline back to its default nodal state on episode reset."""
     trampoline: DeformableObject = env.scene[asset_cfg.name]
@@ -205,6 +206,7 @@ def reset_deformable_trampoline_event(
             trampoline.data.default_nodal_state_w,
             trampoline.data.nodal_kinematic_target,
             pin_width=pin_width,
+            pin_radius=pin_radius,
         )
         cache[asset_cfg.name] = trampoline_targets
 

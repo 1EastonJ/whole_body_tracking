@@ -7,15 +7,16 @@ from pxr import Gf, UsdGeom
 import isaaclab.sim as sim_utils
 from isaaclab.assets import DeformableObject, DeformableObjectCfg
 
-TRAMPOLINE_RADIUS = 5.0
-TRAMPOLINE_THICKNESS = 0.5
+TRAMPOLINE_RADIUS = 1.5
+TRAMPOLINE_THICKNESS = 0.1
 TRAMPOLINE_TOP_Z = 0.0
 TRAMPOLINE_CENTER_Z = TRAMPOLINE_TOP_Z - 0.5 * TRAMPOLINE_THICKNESS
-TRAMPOLINE_PIN_WIDTH = 3.0
+TRAMPOLINE_PIN_RADIUS = TRAMPOLINE_RADIUS
+TRAMPOLINE_PIN_WIDTH = 0.0
 TRAMPOLINE_MASS = 10.0
-TRAMPOLINE_YOUNGS_MODULUS = 3.0e7
-TRAMPOLINE_SIM_RESOLUTION = 20
-TRAMPOLINE_DR_YOUNGS_MODULUS_RANGE = (3.0e7, 3.0e7)
+TRAMPOLINE_YOUNGS_MODULUS = 8.0e4
+TRAMPOLINE_SIM_RESOLUTION = 15
+TRAMPOLINE_DR_YOUNGS_MODULUS_RANGE = (8.0e4, 8.0e4)
 TRAMPOLINE_DR_MASS_RANGE = (10.0, 10.0)
 
 
@@ -37,15 +38,14 @@ def make_trampoline_cfg(
             axis="Z",
             mass_props=sim_utils.MassPropertiesCfg(mass=mass),
             deformable_props=sim_utils.DeformableBodyPropertiesCfg(
-                solver_position_iteration_count=48,
+                solver_position_iteration_count=24,
                 vertex_velocity_damping=0.05,
                 sleep_damping=1.0,
                 sleep_threshold=0.01,
                 settling_threshold=0.02,
                 self_collision=False,
                 simulation_hexahedral_resolution=sim_resolution,
-                contact_offset=0.05,
-                rest_offset=0.02,
+                rest_offset=0.0,
             ),
             visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.15, 0.35, 0.95), metallic=0.05),
             physics_material=sim_utils.DeformableBodyMaterialCfg(
@@ -64,7 +64,8 @@ def make_trampoline_cfg(
 def build_trampoline_kinematic_targets(
     default_nodal_state_w: torch.Tensor,
     nodal_kinematic_target: torch.Tensor,
-    pin_width: float = TRAMPOLINE_PIN_WIDTH,
+    pin_width: float | None = None,
+    pin_radius: float | torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Create kinematic targets that pin the outer rim of a deformable trampoline."""
     targets = nodal_kinematic_target.clone()
@@ -72,13 +73,45 @@ def build_trampoline_kinematic_targets(
     targets[..., 3] = 1.0
 
     nodal_pos = default_nodal_state_w[..., :3]
-    center_xy = nodal_pos[..., :2].mean(dim=1, keepdim=True)
+    xy_min = nodal_pos[..., :2].amin(dim=1, keepdim=True)
+    xy_max = nodal_pos[..., :2].amax(dim=1, keepdim=True)
+    center_xy = 0.5 * (xy_min + xy_max)
     radial_distance = torch.linalg.vector_norm(nodal_pos[..., :2] - center_xy, dim=-1)
 
-    rim_radius = radial_distance.max(dim=1, keepdim=True).values
-    pin_threshold = torch.clamp(rim_radius - pin_width, min=0.0)
+    edge_radius = radial_distance.max(dim=1, keepdim=True).values
+    if pin_radius is None:
+        if pin_width is None:
+            pin_radius = TRAMPOLINE_PIN_RADIUS
+        else:
+            pin_threshold = torch.clamp(edge_radius - pin_width, min=0.0)
+            pinned_mask = radial_distance >= pin_threshold
+            min_radial_distance = radial_distance.amin(dim=1, keepdim=True)
+            center_candidates = radial_distance <= min_radial_distance + 1.0e-6
+            center_candidate_z = torch.where(
+                center_candidates,
+                nodal_pos[..., 2],
+                torch.full_like(nodal_pos[..., 2], -torch.inf),
+            )
+            center_node_ids = center_candidate_z.argmax(dim=1)
+
+            targets[..., 3] = torch.where(
+                pinned_mask,
+                torch.zeros_like(targets[..., 3]),
+                torch.ones_like(targets[..., 3]),
+            )
+            return targets, pinned_mask, center_node_ids
+
+    pin_radius_column = _as_column_tensor(pin_radius, device=radial_distance.device).to(dtype=radial_distance.dtype)
+    pin_threshold = torch.minimum(torch.clamp(pin_radius_column, min=0.0), edge_radius)
     pinned_mask = radial_distance >= pin_threshold
-    center_node_ids = radial_distance.argmin(dim=1)
+    min_radial_distance = radial_distance.amin(dim=1, keepdim=True)
+    center_candidates = radial_distance <= min_radial_distance + 1.0e-6
+    center_candidate_z = torch.where(
+        center_candidates,
+        nodal_pos[..., 2],
+        torch.full_like(nodal_pos[..., 2], -torch.inf),
+    )
+    center_node_ids = center_candidate_z.argmax(dim=1)
 
     targets[..., 3] = torch.where(
         pinned_mask,
@@ -211,6 +244,7 @@ __all__ = [
     "TRAMPOLINE_DR_MASS_RANGE",
     "TRAMPOLINE_DR_YOUNGS_MODULUS_RANGE",
     "TRAMPOLINE_MASS",
+    "TRAMPOLINE_PIN_RADIUS",
     "TRAMPOLINE_PIN_WIDTH",
     "TRAMPOLINE_RADIUS",
     "TRAMPOLINE_SIM_RESOLUTION",

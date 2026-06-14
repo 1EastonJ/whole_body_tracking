@@ -21,9 +21,9 @@ from whole_body_tracking.robots.go2 import (
     GO2_TRACKING_ANCHOR_BODY_NAME,
     GO2_TRACKING_BODY_NAMES,
 )
-from whole_body_tracking.tasks.tracking.tracking_env_cfg import MySceneCfg, TrackingEnvCfg
+from whole_body_tracking.tasks.tracking.tracking_env_cfg import ActionsCfg, MySceneCfg, TrackingEnvCfg
 from whole_body_tracking.utils.trampoline_deformable import (
-    TRAMPOLINE_PIN_WIDTH,
+    TRAMPOLINE_PIN_RADIUS,
     TRAMPOLINE_RADIUS,
     TRAMPOLINE_THICKNESS,
     TRAMPOLINE_TOP_Z,
@@ -96,6 +96,14 @@ class Go2TrampolineSceneCfg(MySceneCfg):
         "{ENV_REGEX_NS}/Trampoline",
         center_z=float(TRAMPOLINE_TOP_Z) - 0.5 * float(TRAMPOLINE_THICKNESS),
         debug_vis=False,
+    )
+
+
+@configclass
+class Go2TrampolineActionsCfg(ActionsCfg):
+    trampoline_pin = mdp.TrampolinePinningActionCfg(
+        asset_name="trampoline",
+        pin_radius=float(TRAMPOLINE_PIN_RADIUS),
     )
 
 
@@ -175,6 +183,7 @@ class Go2TrampolineNoStateEstimationEnvCfg(Go2FlatNoStateEstimationEnvCfg):
         env_spacing=max(2.5, 2.0 * float(TRAMPOLINE_RADIUS) + 2.0),
         replicate_physics=False,
     )
+    actions: Go2TrampolineActionsCfg = Go2TrampolineActionsCfg()
 
     def __post_init__(self):
         super().__post_init__()
@@ -186,7 +195,7 @@ class Go2TrampolineNoStateEstimationEnvCfg(Go2FlatNoStateEstimationEnvCfg):
             mode="reset",
             params={
                 "asset_cfg": SceneEntityCfg("trampoline"),
-                "pin_width": float(TRAMPOLINE_PIN_WIDTH),
+                "pin_radius": float(TRAMPOLINE_PIN_RADIUS),
             },
         )
         self.terminations.out_of_trampoline = DoneTerm(

@@ -103,10 +103,10 @@ parser.add_argument(
 )
 
 # built-in deformable trampoline options
-parser.add_argument("--pin_width", type=float, default=3.0, help="Pinned rim width in meters for the deformable trampoline.")
-parser.add_argument("--youngs_modulus", type=float, default=3.0e7, help="Built-in trampoline Young's modulus.")
-parser.add_argument("--mass", type=float, default=10.0, help="Built-in trampoline mass.")
-parser.add_argument("--sim_resolution", type=int, default=20, help="Built-in trampoline hexahedral resolution.")
+parser.add_argument("--pin_width", type=float, default=None, help="Pinned rim width in meters for the deformable trampoline.")
+parser.add_argument("--youngs_modulus", type=float, default=None, help="Built-in trampoline Young's modulus.")
+parser.add_argument("--mass", type=float, default=None, help="Built-in trampoline mass.")
+parser.add_argument("--sim_resolution", type=int, default=None, help="Built-in trampoline hexahedral resolution.")
 parser.add_argument(
     "--randomize_on_reset",
     action="store_true",
@@ -172,13 +172,23 @@ from whole_body_tracking.robots.go2 import GO2_CFG
 from whole_body_tracking.utils.trampoline_deformable import (
     TRAMPOLINE_DR_MASS_RANGE,
     TRAMPOLINE_DR_YOUNGS_MODULUS_RANGE,
+    TRAMPOLINE_MASS,
+    TRAMPOLINE_PIN_RADIUS,
+    TRAMPOLINE_SIM_RESOLUTION,
     TRAMPOLINE_THICKNESS,
+    TRAMPOLINE_YOUNGS_MODULUS,
     build_trampoline_kinematic_targets,
     make_trampoline_cfg,
     set_trampoline_youngs_moduli,
     trampoline_mesh_prim_path,
 )
 
+if args_cli.youngs_modulus is None:
+    args_cli.youngs_modulus = TRAMPOLINE_YOUNGS_MODULUS
+if args_cli.mass is None:
+    args_cli.mass = TRAMPOLINE_MASS
+if args_cli.sim_resolution is None:
+    args_cli.sim_resolution = TRAMPOLINE_SIM_RESOLUTION
 
 SPRING_PLANE_RADIUS = 1.5
 SPRING_PLANE_THICKNESS = 0.02
@@ -609,6 +619,7 @@ def main() -> None:
             trampoline.data.default_nodal_state_w,
             trampoline.data.nodal_kinematic_target,
             pin_width=args_cli.pin_width,
+            pin_radius=TRAMPOLINE_PIN_RADIUS if args_cli.pin_width is None else None,
         )
         trampoline_mass_attrs = resolve_trampoline_mass_attrs(trampoline)
         if args_cli.show_trampoline_nodes:
