@@ -1,8 +1,20 @@
 from isaaclab.utils import configclass
 
+import whole_body_tracking.tasks.tracking.mdp as mdp
 from whole_body_tracking.robots.g1 import G1_ACTION_SCALE, G1_CYLINDER_CFG
 from whole_body_tracking.tasks.tracking.config.g1.agents.rsl_rl_ppo_cfg import LOW_FREQ_SCALE
-from whole_body_tracking.tasks.tracking.tracking_env_cfg import TrackingEnvCfg
+from whole_body_tracking.tasks.tracking.tracking_env_cfg import ActionsCfg, TrackingEnvCfg
+
+
+@configclass
+class G1GodHandActionsCfg(ActionsCfg):
+    god_hand = mdp.GodHandWrenchActionCfg(
+        asset_name="robot",
+        body_name="pelvis",
+        force_scale=(300.0, 300.0, 300.0),
+        torque_scale=(50.0, 50.0, 50.0),
+        is_global=False,
+    )
 
 
 @configclass
@@ -29,6 +41,17 @@ class G1FlatEnvCfg(TrackingEnvCfg):
             "right_elbow_link",
             "right_wrist_yaw_link",
         ]
+
+
+@configclass
+class G1FlatGodHandEnvCfg(G1FlatEnvCfg):
+    actions: G1GodHandActionsCfg = G1GodHandActionsCfg()
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.commands.motion.motion_file = (
+            "/inspire/hdd/project/leverage-robot/ky26214/whole_body_tracking/datag1/npz/video_005_v2r.npz"
+        )
 
 
 @configclass

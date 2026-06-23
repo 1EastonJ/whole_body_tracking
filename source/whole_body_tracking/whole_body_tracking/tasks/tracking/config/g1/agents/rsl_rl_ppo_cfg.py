@@ -31,6 +31,13 @@ class G1FlatPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     )
 
 
+@configclass
+class G1FlatGodHandPPORunnerCfg(G1FlatPPORunnerCfg):
+    def __post_init__(self):
+        super().__post_init__()
+        self.experiment_name = "g1_flat_god_hand"
+
+
 LOW_FREQ_SCALE = 0.5
 
 
