@@ -8,16 +8,26 @@ import isaaclab.sim as sim_utils
 from isaaclab.assets import DeformableObject, DeformableObjectCfg
 
 TRAMPOLINE_RADIUS = 1.5
-TRAMPOLINE_THICKNESS = 0.1
+TRAMPOLINE_THICKNESS = 0.05
 TRAMPOLINE_TOP_Z = 0.0
 TRAMPOLINE_CENTER_Z = TRAMPOLINE_TOP_Z - 0.5 * TRAMPOLINE_THICKNESS
 TRAMPOLINE_PIN_RADIUS = TRAMPOLINE_RADIUS
 TRAMPOLINE_PIN_WIDTH = 0.0
-TRAMPOLINE_MASS = 10.0
-TRAMPOLINE_YOUNGS_MODULUS = 8.0e4
+TRAMPOLINE_MASS = 7.5
+TRAMPOLINE_YOUNGS_MODULUS = 1.5e5
+TRAMPOLINE_DYNAMIC_FRICTION = 0.8
+TRAMPOLINE_POISSONS_RATIO = 0.35
+TRAMPOLINE_ELASTICITY_DAMPING = 0.005
+TRAMPOLINE_DAMPING_SCALE = 0.5
 TRAMPOLINE_SIM_RESOLUTION = 15
-TRAMPOLINE_DR_YOUNGS_MODULUS_RANGE = (8.0e4, 8.0e4)
-TRAMPOLINE_DR_MASS_RANGE = (10.0, 10.0)
+MIXED_RESET_STATIC_HEIGHT_OFFSET = 0.0
+TRAMPOLINE_DR_YOUNGS_MODULUS_RANGE = (1.0e5, 3.0e5)
+TRAMPOLINE_DR_MASS_RANGE = (7.5, 20.0)
+MIXED_RESET_DROP_HEIGHT_RANGE = (-0.01, 0.01)
+TRAMPOLINE_DR_DYNAMIC_FRICTION_RANGE = (0.4, 1.2)
+TRAMPOLINE_DR_ELASTICITY_DAMPING_RANGE = (0.003, 0.008)
+TRAMPOLINE_DR_DAMPING_SCALE_RANGE = (0.4, 0.6)
+TRAMPOLINE_DR_POISSONS_RATIO_RANGE = (0.25, 0.45)
 
 
 def make_trampoline_cfg(
@@ -49,11 +59,11 @@ def make_trampoline_cfg(
             ),
             visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.15, 0.35, 0.95), metallic=0.05),
             physics_material=sim_utils.DeformableBodyMaterialCfg(
-                dynamic_friction=0.8,
+                dynamic_friction=TRAMPOLINE_DYNAMIC_FRICTION,
                 youngs_modulus=youngs_modulus,
-                poissons_ratio=0.35,
-                elasticity_damping=0.02,
-                damping_scale=1.0,
+                poissons_ratio=TRAMPOLINE_POISSONS_RATIO,
+                elasticity_damping=TRAMPOLINE_ELASTICITY_DAMPING,
+                damping_scale=TRAMPOLINE_DAMPING_SCALE,
             ),
         ),
         init_state=DeformableObjectCfg.InitialStateCfg(pos=(0.0, 0.0, center_z)),
@@ -191,14 +201,39 @@ def trampoline_mesh_prim_path(root_prim_path: str) -> str:
     return f"{root_prim_path}/geometry/mesh"
 
 
-def get_trampoline_youngs_moduli(material_view) -> torch.Tensor:
-    """Read Young's modulus values from the available material view API."""
-    getter = getattr(material_view, "get_youngs_moduli", None)
+def _get_trampoline_material_property(material_view, plural_getter_name: str, singular_getter_name: str) -> torch.Tensor:
+    """Read a deformable material property from whichever material-view API is available."""
+    getter = getattr(material_view, plural_getter_name, None)
     if getter is not None:
         values = getter()
     else:
-        values = material_view.get_youngs_modulus()
+        values = getattr(material_view, singular_getter_name)()
     return torch.as_tensor(values, device="cpu", dtype=torch.float32).clone()
+
+
+def get_trampoline_youngs_moduli(material_view) -> torch.Tensor:
+    """Read Young's modulus values from the available material view API."""
+    return _get_trampoline_material_property(material_view, "get_youngs_moduli", "get_youngs_modulus")
+
+
+def get_trampoline_dynamic_frictions(material_view) -> torch.Tensor:
+    """Read deformable material dynamic friction values."""
+    return _get_trampoline_material_property(material_view, "get_dynamic_frictions", "get_dynamic_friction")
+
+
+def get_trampoline_elasticity_dampings(material_view) -> torch.Tensor:
+    """Read deformable material elasticity damping values."""
+    return _get_trampoline_material_property(material_view, "get_elasticity_dampings", "get_damping")
+
+
+def get_trampoline_damping_scales(material_view) -> torch.Tensor:
+    """Read deformable material damping scale values."""
+    return _get_trampoline_material_property(material_view, "get_damping_scales", "get_damping_scale")
+
+
+def get_trampoline_poissons_ratios(material_view) -> torch.Tensor:
+    """Read deformable material Poisson's ratio values."""
+    return _get_trampoline_material_property(material_view, "get_poissons_ratios", "get_poissons_ratio")
 
 
 def _as_column_tensor(values: torch.Tensor, *, device: str | torch.device | None = None) -> torch.Tensor:
@@ -215,37 +250,146 @@ def _as_column_tensor(values: torch.Tensor, *, device: str | torch.device | None
     return tensor.contiguous()
 
 
-def set_trampoline_youngs_moduli(material_view, values: torch.Tensor, env_ids: torch.Tensor) -> None:
-    """Write Young's modulus values using whichever material-view API is available."""
+def _set_trampoline_material_property(
+    material_view,
+    values: torch.Tensor,
+    env_ids: torch.Tensor,
+    *,
+    plural_setter_name: str,
+    singular_setter_name: str,
+    singular_getter_name: str,
+    property_name: str,
+) -> None:
+    """Write a deformable material property using whichever material-view API is available."""
     env_ids = torch.as_tensor(env_ids, dtype=torch.long).reshape(-1).contiguous()
 
-    setter = getattr(material_view, "set_youngs_moduli", None)
+    setter = getattr(material_view, plural_setter_name, None)
     if setter is not None:
         values = _as_column_tensor(values)
         if values.shape[0] == 1 and env_ids.numel() > 1:
             values = values.expand(env_ids.numel(), 1).clone()
         if values.shape[0] != env_ids.numel():
-            raise ValueError(f"Expected {env_ids.numel()} Young's modulus values, got {values.shape[0]}.")
+            raise ValueError(f"Expected {env_ids.numel()} {property_name} values, got {values.shape[0]}.")
         setter(values, indices=env_ids)
     else:
-        current_values = _as_column_tensor(material_view.get_youngs_modulus()).clone()
+        # The low-level PhysX tensor view expects a full `(count, 1)` material buffer
+        # even when `indices` selects only a subset of environments.
+        current_values = _as_column_tensor(getattr(material_view, singular_getter_name)()).clone()
         env_ids = env_ids.to(device=current_values.device)
         values = _as_column_tensor(values, device=current_values.device)
         if values.shape[0] == 1 and env_ids.numel() > 1:
             values = values.expand(env_ids.numel(), 1).clone()
         if values.shape[0] != env_ids.numel():
-            raise ValueError(f"Expected {env_ids.numel()} Young's modulus values, got {values.shape[0]}.")
+            raise ValueError(f"Expected {env_ids.numel()} {property_name} values, got {values.shape[0]}.")
         current_values[env_ids] = values
-        material_view.set_youngs_modulus(current_values, indices=env_ids)
+        getattr(material_view, singular_setter_name)(current_values, indices=env_ids)
+
+
+def set_trampoline_youngs_moduli(material_view, values: torch.Tensor, env_ids: torch.Tensor) -> None:
+    """Write Young's modulus values using whichever material-view API is available."""
+    _set_trampoline_material_property(
+        material_view,
+        values,
+        env_ids,
+        plural_setter_name="set_youngs_moduli",
+        singular_setter_name="set_youngs_modulus",
+        singular_getter_name="get_youngs_modulus",
+        property_name="Young's modulus",
+    )
+
+
+def set_trampoline_dynamic_frictions(material_view, values: torch.Tensor, env_ids: torch.Tensor) -> None:
+    """Write deformable material dynamic friction values."""
+    _set_trampoline_material_property(
+        material_view,
+        values,
+        env_ids,
+        plural_setter_name="set_dynamic_frictions",
+        singular_setter_name="set_dynamic_friction",
+        singular_getter_name="get_dynamic_friction",
+        property_name="dynamic friction",
+    )
+
+
+def set_trampoline_elasticity_dampings(material_view, values: torch.Tensor, env_ids: torch.Tensor) -> None:
+    """Write deformable material elasticity damping values."""
+    _set_trampoline_material_property(
+        material_view,
+        values,
+        env_ids,
+        plural_setter_name="set_elasticity_dampings",
+        singular_setter_name="set_damping",
+        singular_getter_name="get_damping",
+        property_name="elasticity damping",
+    )
+
+
+def set_trampoline_damping_scales(material_view, values: torch.Tensor, env_ids: torch.Tensor) -> None:
+    """Write deformable material damping scale values."""
+    _set_trampoline_material_property(
+        material_view,
+        values,
+        env_ids,
+        plural_setter_name="set_damping_scales",
+        singular_setter_name="set_damping_scale",
+        singular_getter_name="get_damping_scale",
+        property_name="damping scale",
+    )
+
+
+def set_trampoline_poissons_ratios(material_view, values: torch.Tensor, env_ids: torch.Tensor) -> None:
+    """Write deformable material Poisson's ratio values."""
+    _set_trampoline_material_property(
+        material_view,
+        values,
+        env_ids,
+        plural_setter_name="set_poissons_ratios",
+        singular_setter_name="set_poissons_ratio",
+        singular_getter_name="get_poissons_ratio",
+        property_name="Poisson's ratio",
+    )
+
+
+def set_trampoline_material_properties(
+    material_view,
+    env_ids: torch.Tensor,
+    *,
+    youngs_moduli: torch.Tensor | None = None,
+    dynamic_frictions: torch.Tensor | None = None,
+    elasticity_dampings: torch.Tensor | None = None,
+    damping_scales: torch.Tensor | None = None,
+    poissons_ratios: torch.Tensor | None = None,
+) -> None:
+    """Write randomized deformable trampoline material properties for selected environments."""
+    if youngs_moduli is not None:
+        set_trampoline_youngs_moduli(material_view, youngs_moduli, env_ids)
+    if dynamic_frictions is not None:
+        set_trampoline_dynamic_frictions(material_view, dynamic_frictions, env_ids)
+    if elasticity_dampings is not None:
+        set_trampoline_elasticity_dampings(material_view, elasticity_dampings, env_ids)
+    if damping_scales is not None:
+        set_trampoline_damping_scales(material_view, damping_scales, env_ids)
+    if poissons_ratios is not None:
+        set_trampoline_poissons_ratios(material_view, poissons_ratios, env_ids)
 
 
 __all__ = [
+    "MIXED_RESET_DROP_HEIGHT_RANGE",
+    "MIXED_RESET_STATIC_HEIGHT_OFFSET",
     "TRAMPOLINE_CENTER_Z",
+    "TRAMPOLINE_DAMPING_SCALE",
+    "TRAMPOLINE_DR_DAMPING_SCALE_RANGE",
+    "TRAMPOLINE_DR_DYNAMIC_FRICTION_RANGE",
+    "TRAMPOLINE_DR_ELASTICITY_DAMPING_RANGE",
     "TRAMPOLINE_DR_MASS_RANGE",
+    "TRAMPOLINE_DR_POISSONS_RATIO_RANGE",
     "TRAMPOLINE_DR_YOUNGS_MODULUS_RANGE",
+    "TRAMPOLINE_DYNAMIC_FRICTION",
+    "TRAMPOLINE_ELASTICITY_DAMPING",
     "TRAMPOLINE_MASS",
     "TRAMPOLINE_PIN_RADIUS",
     "TRAMPOLINE_PIN_WIDTH",
+    "TRAMPOLINE_POISSONS_RATIO",
     "TRAMPOLINE_RADIUS",
     "TRAMPOLINE_SIM_RESOLUTION",
     "TRAMPOLINE_THICKNESS",
@@ -253,9 +397,18 @@ __all__ = [
     "TRAMPOLINE_YOUNGS_MODULUS",
     "build_trampoline_kinematic_targets",
     "build_trampoline_visual_translate_ops",
+    "get_trampoline_damping_scales",
+    "get_trampoline_dynamic_frictions",
+    "get_trampoline_elasticity_dampings",
+    "get_trampoline_poissons_ratios",
     "get_trampoline_youngs_moduli",
     "make_trampoline_cfg",
     "reset_deformable_trampoline",
+    "set_trampoline_damping_scales",
+    "set_trampoline_dynamic_frictions",
+    "set_trampoline_elasticity_dampings",
+    "set_trampoline_material_properties",
+    "set_trampoline_poissons_ratios",
     "set_trampoline_youngs_moduli",
     "trampoline_center_heights",
     "trampoline_mesh_prim_path",

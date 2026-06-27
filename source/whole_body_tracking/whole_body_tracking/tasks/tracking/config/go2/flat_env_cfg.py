@@ -23,6 +23,14 @@ from whole_body_tracking.robots.go2 import (
 )
 from whole_body_tracking.tasks.tracking.tracking_env_cfg import ActionsCfg, MySceneCfg, TrackingEnvCfg
 from whole_body_tracking.utils.trampoline_deformable import (
+    MIXED_RESET_DROP_HEIGHT_RANGE,
+    MIXED_RESET_STATIC_HEIGHT_OFFSET,
+    TRAMPOLINE_DR_DAMPING_SCALE_RANGE,
+    TRAMPOLINE_DR_DYNAMIC_FRICTION_RANGE,
+    TRAMPOLINE_DR_ELASTICITY_DAMPING_RANGE,
+    TRAMPOLINE_DR_MASS_RANGE,
+    TRAMPOLINE_DR_POISSONS_RATIO_RANGE,
+    TRAMPOLINE_DR_YOUNGS_MODULUS_RANGE,
     TRAMPOLINE_PIN_RADIUS,
     TRAMPOLINE_RADIUS,
     TRAMPOLINE_THICKNESS,
@@ -190,12 +198,24 @@ class Go2TrampolineNoStateEstimationEnvCfg(Go2FlatNoStateEstimationEnvCfg):
         self.scene.terrain = None
         self.scene.replicate_physics = False
         self.scene.env_spacing = max(float(self.scene.env_spacing), 2.0 * float(TRAMPOLINE_RADIUS) + 2.0)
+        self.commands.motion.pose_range = dict(self.commands.motion.pose_range)
+        self.commands.motion.pose_range["z"] = (
+            float(MIXED_RESET_STATIC_HEIGHT_OFFSET) + float(MIXED_RESET_DROP_HEIGHT_RANGE[0]),
+            float(MIXED_RESET_STATIC_HEIGHT_OFFSET) + float(MIXED_RESET_DROP_HEIGHT_RANGE[1]),
+        )
         self.events.reset_trampoline = EventTerm(
             func=mdp.reset_deformable_trampoline_event,
             mode="reset",
             params={
                 "asset_cfg": SceneEntityCfg("trampoline"),
                 "pin_radius": float(TRAMPOLINE_PIN_RADIUS),
+                "randomize_material": False,
+                "youngs_modulus_range": TRAMPOLINE_DR_YOUNGS_MODULUS_RANGE,
+                "mass_range": TRAMPOLINE_DR_MASS_RANGE,
+                "dynamic_friction_range": TRAMPOLINE_DR_DYNAMIC_FRICTION_RANGE,
+                "elasticity_damping_range": TRAMPOLINE_DR_ELASTICITY_DAMPING_RANGE,
+                "damping_scale_range": TRAMPOLINE_DR_DAMPING_SCALE_RANGE,
+                "poissons_ratio_range": TRAMPOLINE_DR_POISSONS_RATIO_RANGE,
             },
         )
         self.terminations.out_of_trampoline = DoneTerm(

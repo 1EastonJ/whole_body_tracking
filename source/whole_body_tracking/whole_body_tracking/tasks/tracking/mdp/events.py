@@ -3,14 +3,26 @@ from __future__ import annotations
 import torch
 from typing import TYPE_CHECKING, Literal
 
+from isaacsim.core.utils.stage import get_current_stage
+from pxr import Sdf
+
+import isaaclab.sim as sim_utils
 import isaaclab.utils.math as math_utils
 from isaaclab.assets import Articulation, DeformableObject, RigidObject
 from isaaclab.envs.mdp.events import _randomize_prop_by_op
 from isaaclab.managers import EventTermCfg, ManagerTermBase, SceneEntityCfg
 
 from whole_body_tracking.utils.trampoline_deformable import (
+    TRAMPOLINE_DR_DAMPING_SCALE_RANGE,
+    TRAMPOLINE_DR_DYNAMIC_FRICTION_RANGE,
+    TRAMPOLINE_DR_ELASTICITY_DAMPING_RANGE,
+    TRAMPOLINE_DR_MASS_RANGE,
+    TRAMPOLINE_DR_POISSONS_RATIO_RANGE,
+    TRAMPOLINE_DR_YOUNGS_MODULUS_RANGE,
     build_trampoline_kinematic_targets,
     reset_deformable_trampoline,
+    set_trampoline_material_properties,
+    trampoline_mesh_prim_path,
 )
 
 if TYPE_CHECKING:
@@ -181,12 +193,101 @@ def randomize_rigid_body_com(
     asset.root_physx_view.set_coms(coms, env_ids)
 
 
+def _resolve_deformable_mass_attrs(trampoline: DeformableObject) -> list:
+    stage = get_current_stage()
+    attrs = []
+    for prim_path in sim_utils.find_matching_prim_paths(trampoline_mesh_prim_path(trampoline.cfg.prim_path)):
+        prim = stage.GetPrimAtPath(prim_path)
+        if not prim.IsValid():
+            raise RuntimeError(f"Invalid deformable trampoline mesh prim: '{prim_path}'.")
+        attr = prim.GetAttribute("physics:mass")
+        if not attr.IsValid():
+            attr = prim.CreateAttribute("physics:mass", Sdf.ValueTypeNames.Float)
+        attrs.append(attr)
+    return attrs
+
+
+def _get_cached_deformable_mass_attrs(env: ManagerBasedEnv, trampoline: DeformableObject, asset_name: str) -> list:
+    cache = getattr(env, "_deformable_mass_attrs_cache", None)
+    if cache is None:
+        cache = {}
+        setattr(env, "_deformable_mass_attrs_cache", cache)
+
+    attrs = cache.get(asset_name)
+    if attrs is None:
+        attrs = _resolve_deformable_mass_attrs(trampoline)
+        cache[asset_name] = attrs
+    return attrs
+
+
+def randomize_deformable_trampoline_material_event(
+    env: ManagerBasedEnv,
+    env_ids: torch.Tensor | None,
+    asset_cfg: SceneEntityCfg,
+    youngs_modulus_range: tuple[float, float] = TRAMPOLINE_DR_YOUNGS_MODULUS_RANGE,
+    mass_range: tuple[float, float] = TRAMPOLINE_DR_MASS_RANGE,
+    dynamic_friction_range: tuple[float, float] = TRAMPOLINE_DR_DYNAMIC_FRICTION_RANGE,
+    elasticity_damping_range: tuple[float, float] = TRAMPOLINE_DR_ELASTICITY_DAMPING_RANGE,
+    damping_scale_range: tuple[float, float] = TRAMPOLINE_DR_DAMPING_SCALE_RANGE,
+    poissons_ratio_range: tuple[float, float] = TRAMPOLINE_DR_POISSONS_RATIO_RANGE,
+):
+    """Randomize deformable trampoline material and mass for selected environments."""
+    trampoline: DeformableObject = env.scene[asset_cfg.name]
+    if env_ids is None:
+        env_ids = torch.arange(env.scene.num_envs, device=trampoline.device, dtype=torch.long)
+    else:
+        env_ids = torch.as_tensor(env_ids, device=trampoline.device, dtype=torch.long).reshape(-1)
+
+    if trampoline.material_physx_view is None:
+        raise RuntimeError("Failed to create deformable trampoline material view.")
+
+    sample_shape = (len(env_ids),)
+    youngs_moduli = math_utils.sample_uniform(*youngs_modulus_range, sample_shape, device=trampoline.device).to(
+        dtype=torch.float32
+    )
+    dynamic_frictions = math_utils.sample_uniform(*dynamic_friction_range, sample_shape, device=trampoline.device).to(
+        dtype=torch.float32
+    )
+    elasticity_dampings = math_utils.sample_uniform(*elasticity_damping_range, sample_shape, device=trampoline.device).to(
+        dtype=torch.float32
+    )
+    damping_scales = math_utils.sample_uniform(*damping_scale_range, sample_shape, device=trampoline.device).to(
+        dtype=torch.float32
+    )
+    poissons_ratios = math_utils.sample_uniform(*poissons_ratio_range, sample_shape, device=trampoline.device).to(
+        dtype=torch.float32
+    )
+    masses = math_utils.sample_uniform(*mass_range, sample_shape, device=trampoline.device).to(dtype=torch.float32)
+
+    set_trampoline_material_properties(
+        trampoline.material_physx_view,
+        env_ids,
+        youngs_moduli=youngs_moduli,
+        dynamic_frictions=dynamic_frictions,
+        elasticity_dampings=elasticity_dampings,
+        damping_scales=damping_scales,
+        poissons_ratios=poissons_ratios,
+    )
+
+    mass_attrs = _get_cached_deformable_mass_attrs(env, trampoline, asset_cfg.name)
+    with Sdf.ChangeBlock():
+        for env_id, mass in zip(env_ids.tolist(), masses.tolist(), strict=True):
+            mass_attrs[env_id].Set(float(mass))
+
+
 def reset_deformable_trampoline_event(
     env: ManagerBasedEnv,
     env_ids: torch.Tensor | None,
     asset_cfg: SceneEntityCfg,
     pin_width: float | None = None,
     pin_radius: float | torch.Tensor | None = None,
+    randomize_material: bool = False,
+    youngs_modulus_range: tuple[float, float] = TRAMPOLINE_DR_YOUNGS_MODULUS_RANGE,
+    mass_range: tuple[float, float] = TRAMPOLINE_DR_MASS_RANGE,
+    dynamic_friction_range: tuple[float, float] = TRAMPOLINE_DR_DYNAMIC_FRICTION_RANGE,
+    elasticity_damping_range: tuple[float, float] = TRAMPOLINE_DR_ELASTICITY_DAMPING_RANGE,
+    damping_scale_range: tuple[float, float] = TRAMPOLINE_DR_DAMPING_SCALE_RANGE,
+    poissons_ratio_range: tuple[float, float] = TRAMPOLINE_DR_POISSONS_RATIO_RANGE,
 ):
     """Reset a deformable trampoline back to its default nodal state on episode reset."""
     trampoline: DeformableObject = env.scene[asset_cfg.name]
@@ -194,6 +295,19 @@ def reset_deformable_trampoline_event(
         env_ids = torch.arange(env.scene.num_envs, device=trampoline.device, dtype=torch.long)
     else:
         env_ids = torch.as_tensor(env_ids, device=trampoline.device, dtype=torch.long).reshape(-1)
+
+    if randomize_material:
+        randomize_deformable_trampoline_material_event(
+            env,
+            env_ids,
+            asset_cfg,
+            youngs_modulus_range=youngs_modulus_range,
+            mass_range=mass_range,
+            dynamic_friction_range=dynamic_friction_range,
+            elasticity_damping_range=elasticity_damping_range,
+            damping_scale_range=damping_scale_range,
+            poissons_ratio_range=poissons_ratio_range,
+        )
 
     cache = getattr(env, "_deformable_reset_targets_cache", None)
     if cache is None:
