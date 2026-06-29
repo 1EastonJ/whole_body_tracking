@@ -172,7 +172,7 @@ class Go2FlatNoStateEstimationFrontFlipEnvCfg(Go2FlatNoStateEstimationEnvCfg):
         self.commands.motion.sampling_mode = "adaptive"
         self.events.physics_material.params["static_friction_range"] = (0.3, 1.2)
         self.events.physics_material.params["dynamic_friction_range"] = (0.3, 1.2)
-        self.terminations.anchor_ori.params["threshold"] = 1.0
+        self.terminations.anchor_ori.params["threshold"] = 0.8
         self.terminations.ee_body_pos.params["threshold"] = 0.6
         self.rewards.motion_global_anchor_ori.weight = 2.5
         self.rewards.motion_body_lin_vel.weight = 2.0
@@ -244,7 +244,7 @@ class Go2TrampolineNoStateEstimationFrontFlipEnvCfg(Go2TrampolineNoStateEstimati
         self.commands.motion.sampling_mode = "adaptive"
         self.events.physics_material.params["static_friction_range"] = (0.3, 1.2)
         self.events.physics_material.params["dynamic_friction_range"] = (0.3, 1.2)
-        self.terminations.anchor_ori.params["threshold"] = 1.0
+        self.terminations.anchor_ori.params["threshold"] = 0.8
         self.terminations.ee_body_pos.params["threshold"] = 0.6
         self.rewards.motion_global_anchor_ori.weight = 2.5
         self.rewards.motion_body_lin_vel.weight = 2.0
