@@ -38,6 +38,13 @@ class G1FlatGodHandPPORunnerCfg(G1FlatPPORunnerCfg):
         self.experiment_name = "g1_flat_god_hand"
 
 
+@configclass
+class G1TrampolinePPORunnerCfg(G1FlatPPORunnerCfg):
+    def __post_init__(self):
+        super().__post_init__()
+        self.experiment_name = "g1_tracking_trampoline"
+
+
 LOW_FREQ_SCALE = 0.5
 
 
